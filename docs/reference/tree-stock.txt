@@ -1,0 +1,189 @@
+Quick Settings Tree — GNOME Shell 51.0 (stock)
+Derived from source analysis of libshell-51.so gresource JS files
+N_QUICK_SETTINGS_COLUMNS = 2  (panel.js:42)
+
+QuickSettingsMenu (PopupMenu.PopupMenu subclass)
+├── _boxPointer (St.BoxPointer)
+│   └── box  [style: 'quick-settings']
+│       └── _grid  St.Widget [style: 'quick-settings-grid']
+│           │   layout_manager: QuickSettingsLayout(nColumns=2)
+│           │
+│           │  ── ROW 0 (colSpan=2) ──────────────────────────────
+│           ├── SystemItem  [style: 'quick-settings-system-item', reactive:false]  colSpan=2
+│           │   └── child: St.BoxLayout
+│           │       ├── PowerToggle  [style: 'quick-toggle button power-item']
+│           │       │     CONDITIONAL: visible only when battery present (UPower.IsPresent)
+│           │       │     title = "75%" (battery percentage via Intl.NumberFormat)
+│           │       ├── _laptopSpacer  Clutter.Actor x_expand:true
+│           │       │     CONDITIONAL: visible = PowerToggle.visible  (laptop spacer)
+│           │       ├── ScreenshotItem  [style: 'icon-button'] icon: screenshooter-symbolic
+│           │       │     CONDITIONAL: hidden in greeter mode
+│           │       ├── SettingsItem  [style: 'icon-button'] icon: from org.gnome.Settings.desktop
+│           │       │     CONDITIONAL: hidden when sessionMode.allowSettings = false
+│           │       ├── _desktopSpacer  Clutter.Actor x_expand:true
+│           │       │     CONDITIONAL: visible = NOT PowerToggle.visible  (desktop spacer)
+│           │       ├── LockItem  [style: 'icon-button'] icon: system-lock-screen-symbolic
+│           │       │     CONDITIONAL: hidden when systemActions.can-lock-screen = false
+│           │       └── ShutdownItem  [style: 'icon-button', hasMenu:true]
+│           │             icon: system-shutdown-symbolic
+│           │             CONDITIONAL: hidden when no power actions available
+│           │             .menu → SystemItem.menu → QuickToggleMenu
+│           │               header: 'system-shutdown-symbolic' / 'Power Off'
+│           │               ├── Suspend (conditional)
+│           │               ├── Restart… (conditional)
+│           │               ├── Power Off… (conditional)
+│           │               ├── ─────── separator ───────
+│           │               ├── Log Out… (conditional)
+│           │               └── Switch User… (conditional)
+│           │
+│           │  ── ROW 1 (colSpan=2) ──────────────────────────────
+│           ├── OutputStreamSlider  [style: 'quick-slider']  colSpan=2
+│           │     CONDITIONAL: hidden when no PulseAudio default sink
+│           │     icon: audio-volume-{muted,low,medium,high,overamplified}-symbolic
+│           │           OR audio-headphones-symbolic (when headphones detected)
+│           │     .menu → QuickToggleMenu  [header: 'Sound Output']
+│           │       ├── _deviceSection (PopupMenuSection) — output devices
+│           │       ├── ─────── separator ───────
+│           │       └── 'Sound Settings' → gnome-sound-panel.desktop
+│           │
+│           │  ── ROW 2 (colSpan=2) — CONDITIONAL ─────────────────
+│           ├── InputStreamSlider  [style: 'quick-slider']  colSpan=2
+│           │     CONDITIONAL: hidden unless an app is recording audio
+│           │     icon: microphone-sensitivity-{muted,low,medium,high}-symbolic
+│           │     .menu → QuickToggleMenu  [header: 'Sound Input']
+│           │       ├── _deviceSection (PopupMenuSection) — input devices
+│           │       ├── ─────── separator ───────
+│           │       └── 'Sound Settings' → gnome-sound-panel.desktop
+│           │
+│           │  ── ROW 3 (colSpan=2) ──────────────────────────────
+│           ├── BrightnessItem  [style: 'quick-slider']  colSpan=2
+│           │     CONDITIONAL: hidden when brightnessManager.globalScale is falsy
+│           │     icon: display-brightness-symbolic
+│           │     .menu → QuickToggleMenu  [header: 'Brightness']
+│           │       ├── per-monitor sliders (BrightnessSliderMenu)
+│           │       └── [no settings link]
+│           │
+│           │  ── ROW 4 (colSpan=1 each, pairs fill 2 cols) ───────
+│           │
+│           │  Privacy tiles (inserted before sibling):
+│           ├── [CameraItem]  colSpan=1  CONDITIONAL (when camera in use)
+│           ├── [RemoteAccessItem]  colSpan=1  CONDITIONAL
+│           ├── [ThunderboltItem]  colSpan=1  CONDITIONAL
+│           ├── [LocationItem]  colSpan=1  CONDITIONAL
+│           │
+│           │  Network / Bluetooth:
+│           ├── WiFi/Network tile  colSpan=1  CONDITIONAL (HAVE_NETWORKMANAGER)
+│           │     QuickMenuToggle subclass from network.js
+│           │     .menu → network devices + settings link
+│           ├── BluetoothToggle  [style: 'quick-toggle quick-toggle-has-menu button']  colSpan=1
+│           │     CONDITIONAL: requires HAVE_BLUETOOTH + BT hardware
+│           │     icon: bluetooth-{active,disabled,acquiring}-symbolic
+│           │     .menu → QuickToggleMenu  [header: 'Bluetooth']
+│           │       ├── _deviceSection (BT devices list)
+│           │       ├── placeholder (when no devices)
+│           │       ├── ─────── separator ───────
+│           │       └── 'Bluetooth Settings' → gnome-bluetooth-panel.desktop
+│           │
+│           │  Power / Display:
+│           ├── PowerProfilesToggle  [style: 'quick-toggle quick-toggle-has-menu button']  colSpan=1
+│           │     CONDITIONAL: hidden when UPower.PowerProfiles DBus not present
+│           │     icon: power-profile-{performance,balanced,power-saver}-symbolic
+│           │     subtitle: profile name
+│           │     .menu → QuickToggleMenu  [header: 'Power Mode']
+│           │       ├── Performance / Balanced / Power Saver (dynamic)
+│           │       ├── ─────── separator ───────
+│           │       └── 'Power Settings' → gnome-power-panel.desktop
+│           │
+│           ├── NightLightToggle  [style: 'quick-toggle button']  colSpan=1
+│           │     CONDITIONAL: hidden when night-light-supported = false
+│           │     icon: night-light-symbolic
+│           │     Backed by: org.gnome.settings-daemon.plugins.color → night-light-enabled
+│           │
+│           ├── DarkModeToggle  [style: 'quick-toggle button']  colSpan=1
+│           │     Always present (no conditional)
+│           │     icon: dark-mode-symbolic  title: 'Dark Style'
+│           │     Backed by: org.gnome.desktop.interface → color-scheme ('prefer-dark')
+│           │     (Ubuntu-specific: also sets Yaru theme variant)
+│           │
+│           ├── DoNotDisturbToggle  [style: 'quick-toggle button']  colSpan=1
+│           │     Always present (no conditional)
+│           │     icon: notifications-disabled-symbolic  title: 'Do Not Disturb'
+│           │     Backed by: org.gnome.desktop.notifications → show-banners (INVERTED)
+│           │
+│           ├── [BacklightItem]  colSpan=1  CONDITIONAL (keyboard backlight)
+│           │
+│           ├── RfkillToggle  [style: 'quick-toggle button']  colSpan=1
+│           │     CONDITIONAL: only when rfkill HasAirplaneMode && ShouldShowAirplaneMode
+│           │     icon: airplane-mode-symbolic  title: 'Airplane Mode'
+│           │
+│           ├── [AutoRotateToggle]  colSpan=1  CONDITIONAL (tablet mode)
+│           │
+│           └── [UnsafeModeToggle]  colSpan=1  CONDITIONAL (developer mode)
+│
+│  ── BACKGROUND APPS ROW (colSpan=2, appended last) ────────────
+│           └── [BackgroundAppsItem]  colSpan=2  CONDITIONAL
+│                 (shows running background apps)
+│
+└── _overlay  Clutter.Actor  [BindConstraint to _grid X/Y/W]
+    │   Contains all QuickToggleMenu actors (sub-menus)
+    │   Each menu.actor is a St.Widget [style: 'quick-toggle-menu-container']
+    │   height=0 when closed, animated to natural height when open
+    │   menu.box [style: 'quick-toggle-menu'] contains header + items
+    │
+    ├── OutputStreamSlider.menu.actor
+    ├── InputStreamSlider.menu.actor
+    ├── BrightnessItem.menu.actor
+    ├── BluetoothToggle.menu.actor
+    ├── PowerProfilesToggle.menu.actor
+    ├── [Network tile].menu.actor
+    └── ShutdownItem.menu.actor  (= SystemItem.menu.actor)
+
+═══════════════════════════════════════════════════════════════
+LAYOUT NOTES
+═══════════════════════════════════════════════════════════════
+
+QuickSettingsLayout._getRows() flow:
+  - Skips invisible children (visible=false → no row slot)
+  - Skips the placeholder actor (overlay height sentinel)
+  - Groups children into rows respecting nColumns=2 and column-span
+  - vfunc_allocate: when a row contains any visible menu.actor,
+    inserts overlayHeight gap below that row
+
+Sub-menu positioning:
+  QuickToggleMenu.actor constraints:
+    Y = sourceActor.y + sourceActor.height  (BindConstraint + offset=height)
+    X = fills full overlay width
+  → Sub-menu appears directly below its owning tile row
+
+Animation timing: POPUP_ANIMATION_TIME = 400ms (quickSettings.js:17)
+  Open:  height 0→natural (200ms proportional) then opacity 0→255 (200ms)
+  Close: opacity 255→0 (proportional) then height→0 (200ms) then hide()
+
+PopupMenuManager:
+  Each QuickSettingsItem with hasMenu:true creates its own _menuManager
+  (PopupMenu.PopupMenuManager). This closes any open sub-menu when
+  another opens. Dim effect applied to _boxPointer via BrightnessContrastEffect.
+
+═══════════════════════════════════════════════════════════════
+IDENTIFICATION PATTERNS FOR EXTENSIONS
+═══════════════════════════════════════════════════════════════
+
+Access the menu:
+  Main.panel.statusArea.quickSettings.menu
+
+Access the grid:
+  Main.panel.statusArea.quickSettings.menu._grid
+
+Enumerate all tiles:
+  Main.panel.statusArea.quickSettings.menu._grid.get_children()
+
+Access overlay (for sub-menu actors):
+  Main.panel.statusArea.quickSettings.menu._overlay
+
+Insert a custom tile:
+  const qs = Main.panel.statusArea.quickSettings;
+  qs.menu.addItem(myItem, colSpan);              // append
+  qs.menu.insertItemBefore(myItem, sibling, colSpan);  // insert
+
+Add external indicator + tiles (official API):
+  qs.addExternalIndicator(mySystemIndicator, colSpan);  // panel.js:423
