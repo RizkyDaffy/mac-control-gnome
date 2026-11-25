@@ -12,6 +12,14 @@ import {validateLayout, DEFAULT_LAYOUT} from '../src/lib/layoutConfig.js';
 import {planLayout} from '../src/lib/layoutPlan.js';
 import {normalizeMetadata} from '../src/lib/mprisMetadata.js';
 import {pickActivePlayer} from '../src/lib/playerSelection.js';
+import {
+    snapshot,
+    move,
+    restore,
+    restoreAll,
+    addStyleClass,
+    removeAddedStyleClasses,
+} from '../src/lib/reparent.js';
 
 // ── Harness ──────────────────────────────────────────────────────────────────
 
@@ -531,6 +539,149 @@ suite('playerSelection — pickActivePlayer', () => {
         ]);
         const r = pickActivePlayer(players, null);
         assert(r === 'org.mpris.MediaPlayer2.b', 'most recently active paused wins');
+    }
+});
+
+// ── Tests: reparent ──────────────────────────────────────────────────────────
+
+suite('reparent — snapshot, move, restoreAll', () => {
+    function makeActor(name, opts = {}) {
+        const children = [];
+        const classes = new Set((opts.style_class ?? '').split(/\s+/).filter(Boolean));
+        let parent = null;
+        const actor = {
+            name,
+            visible: opts.visible ?? true,
+            x_expand: opts.x_expand ?? false,
+            y_expand: opts.y_expand ?? false,
+            x_align: opts.x_align ?? 0,
+            y_align: opts.y_align ?? 0,
+            layout_manager: opts.layout_manager ?? null,
+            get style_class() { return [...classes].join(' '); },
+            add_style_class_name(cls) { classes.add(cls); },
+            remove_style_class_name(cls) { classes.delete(cls); },
+            has_style_class_name(cls) { return classes.has(cls); },
+            get_parent() { return parent; },
+            _setParent(p) { parent = p; },
+            get_children() { return [...children]; },
+            get_n_children() { return children.length; },
+            add_child(c) {
+                children.push(c);
+                c._setParent(actor);
+            },
+            insert_child_at_index(c, idx) {
+                const clamped = Math.max(0, Math.min(idx, children.length));
+                children.splice(clamped, 0, c);
+                c._setParent(actor);
+            },
+            remove_child(c) {
+                const i = children.indexOf(c);
+                if (i >= 0) {
+                    children.splice(i, 1);
+                    c._setParent(null);
+                }
+            },
+        };
+        return actor;
+    }
+
+    function makeGrid() {
+        const meta = new Map();
+        const layout_manager = {
+            get_child_meta(_g, child) { return {columnSpan: meta.get(child) ?? 1}; },
+            child_set_property(_g, child, prop, val) {
+                if (prop === 'column-span') meta.set(child, val);
+            },
+        };
+        const grid = makeActor('grid', {layout_manager});
+        return {grid, meta};
+    }
+
+    // snapshot + move + restore (single item, style classes, colSpan, idempotent)
+    {
+        const {grid, meta} = makeGrid();
+        const placeholder = makeActor('placeholder');
+        const wifi = makeActor('wifi', {style_class: 'quick-toggle', x_expand: true, y_expand: false});
+        const slider = makeActor('slider', {style_class: 'quick-slider', x_expand: true});
+
+        grid.add_child(placeholder);
+        grid.add_child(wifi);
+        grid.add_child(slider);
+        meta.set(wifi, 1);
+        meta.set(slider, 2);
+
+        const snapWifi = snapshot(wifi, grid);
+        const snapSlider = snapshot(slider, grid);
+        assert(snapWifi.index === 1, 'wifi snapshot index is 1 (after placeholder)');
+        assert(snapWifi.colSpan === 1, 'wifi colSpan is 1');
+        assert(snapSlider.index === 2, 'slider snapshot index is 2');
+        assert(snapSlider.colSpan === 2, 'slider colSpan is 2');
+
+        const row = makeActor('row');
+        move(wifi, row, {xExpand: false, yExpand: true});
+        move(slider, row);
+        assert(wifi.get_parent() === row, 'wifi moved to row');
+        assert(wifi.x_expand === false && wifi.y_expand === true, 'move applied props');
+        assert(grid.get_n_children() === 1, 'grid retains only placeholder');
+
+        addStyleClass(snapWifi, 'mac-cc-tile');
+        assert(wifi.has_style_class_name('mac-cc-tile'), 'added style class');
+
+        // Clear colSpan to verify restore sets it back
+        meta.set(slider, 1);
+
+        restoreAll([snapSlider, snapWifi]); // pass out of order to test ascending sort
+        assertEq(grid.get_children().map(c => c.name), ['placeholder', 'wifi', 'slider'],
+            'restoreAll restores exact order around placeholder');
+        assert(!wifi.has_style_class_name('mac-cc-tile'), 'added style class removed on restore');
+        assert(wifi.x_expand === true && wifi.y_expand === false, 'expand flags restored');
+        assert(meta.get(slider) === 2, 'slider column-span restored to 2');
+
+        // Idempotent second restore
+        restore(snapWifi);
+        restore(snapSlider);
+        assertEq(grid.get_children().map(c => c.name), ['placeholder', 'wifi', 'slider'],
+            'restore is idempotent');
+    }
+
+    // placeholder in middle + destroyed actor skipped safely
+    {
+        const {grid} = makeGrid();
+        const a = makeActor('a');
+        const placeholder = makeActor('placeholder');
+        const b = makeActor('b');
+        const c = makeActor('c');
+        grid.add_child(a);
+        grid.add_child(placeholder);
+        grid.add_child(b);
+        grid.add_child(c);
+
+        const snaps = [snapshot(a, grid), snapshot(b, grid), snapshot(c, grid)];
+        const dest = makeActor('dest');
+        for (const s of snaps) move(s.actor, dest);
+
+        // Simulate b destroyed while moved out
+        snaps[1].destroyed = true;
+        restoreAll(snaps);
+
+        assertEq(grid.get_children().map(x => x.name), ['a', 'placeholder', 'c'],
+            'destroyed actor skipped cleanly, remaining restored around placeholder');
+        assert(b.get_parent() === dest, 'destroyed actor untouched by restore');
+    }
+
+    // removeAddedStyleClasses standalone
+    {
+        const {grid} = makeGrid();
+        const a = makeActor('a', {style_class: 'orig'});
+        grid.add_child(a);
+        const s = snapshot(a, grid);
+        addStyleClass(s, 'extra-1');
+        addStyleClass(s, 'extra-1'); // duplicate ignored
+        addStyleClass(s, 'extra-2');
+        assert(s.addedStyleClasses.length === 2, 'duplicate style class not added twice');
+        removeAddedStyleClasses(s);
+        assert(a.has_style_class_name('orig') && !a.has_style_class_name('extra-1') && !a.has_style_class_name('extra-2'),
+            'only added style classes removed');
     }
 });
 

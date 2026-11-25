@@ -5,8 +5,15 @@
  */
 
 /* ── Root container ─────────────────────────────────────────── */
+.mac-cc,
 .mac-cc-root {
     /* vertical stack; replaces the stock grid */
+}
+
+.mac-cc-row {
+}
+
+.mac-cc-submenu-slot {
 }
 
 /* ── Split block (connectivity left + music card right) ─────── */
