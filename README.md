@@ -2,7 +2,27 @@
 
 A GNOME Shell extension that replaces the Quick Settings popup with a macOS Tahoe-style Control Center layout, including a live Now Playing music card.
 
+Every control is the real GNOME control, reparented — not a clone. Disabling the extension restores the stock panel exactly.
+
 > **Requires:** GNOME Shell 51 · GJS 1.90+ · `gnome-extensions` CLI
+
+---
+
+## Preview
+
+| Music playing | No player |
+|---|---|
+| ![Control Center with Now Playing card](preview/control-music-on.png) | ![Control Center showing Not Playing](preview/control-music-off.png) |
+
+---
+
+## What it does
+
+- **Tahoe layout** — grouped split block, tile rows, full-width sliders, round action buttons, overflow area.
+- **Now Playing card** — title, artist, album art, prev / play-pause / next, driven by MPRIS. Reacts live to player start, stop, and track change.
+- **Real controls** — Wi-Fi, Bluetooth, Dark Style, Do Not Disturb, volume, brightness, Power Mode, Night Light, Airplane Mode, and the screenshot / settings / lock / power buttons keep their original behaviour, sub-menus, and state sync.
+- **Data-driven layout** — reorder blocks with a JSON override, no code edits.
+- **Reversible** — `disable()` puts every moved actor back in its original parent, index, and column span. Idempotent.
 
 ---
 
@@ -26,13 +46,15 @@ A GNOME Shell extension that replaces the Quick Settings popup with a macOS Taho
 └─────────────────────────────────┘
 ```
 
+Anything not claimed by the layout config flows into an overflow area at the bottom, so no control is ever lost.
+
 ---
 
 ## Install
 
 ```bash
 # 1. Clone
-git clone <repo> mac-control-gnome
+git clone https://github.com/RizkyDaffy/mac-control-gnome.git
 cd mac-control-gnome
 
 # 2. Compile schemas + create symlink (does NOT enable in live session)
@@ -52,7 +74,7 @@ Open a terminal in your live desktop session:
 make nested
 ```
 
-This launches `gnome-shell --devkit` with an isolated dconf database.  
+This launches `gnome-shell --devkit` with an isolated dconf database.
 Your live session is **not affected**.
 
 ---
@@ -111,13 +133,51 @@ make schemas && make install
 
 ---
 
+## Project structure
+
+```
+src/
+├── extension.js          Entry point — enable/disable with fatal-error guard
+├── prefs.js              Adw preferences window
+├── metadata.json         Extension manifest
+├── stylesheet.css        Structural CSS (theme provides the visuals)
+├── schemas/              GSettings schema
+└── lib/
+    ├── controller.js     Orchestrates enable/disable and layout passes
+    ├── registry.js       Shell-internals access, isolated in one place
+    ├── reparent.js       Actor move/restore helpers
+    ├── layoutConfig.js   Default layout + JSON override parsing
+    ├── layoutPlan.js     Pure block/tile placement logic
+    ├── controlCenter.js  Popup restructuring
+    ├── submenus.js       In-flow sub-menu hosting
+    ├── musicCard.js      Now Playing card widget
+    ├── mpris.js          MPRIS player watcher
+    ├── mprisMetadata.js  Metadata normalisation (pure)
+    ├── playerSelection.js Active player choice (pure)
+    ├── artCache.js       Album art fetch + cache
+    ├── dndFallback.js    Do Not Disturb tile fallback
+    ├── conflicts.js      Known conflicting extension detection
+    ├── disposables.js    Signal/timeout bookkeeping
+    └── debug.js          Logging and actor tree dump
+
+tests/                    GJS unit tests + MPRIS fixtures
+scripts/dev-shell.sh      Isolated nested shell launcher
+scripts/leak-loop.js      enable/disable leak check
+docs/                     Design, recon, and phase reports
+preview/                  Screenshots used in this README
+```
+
+Design documents live in the repo root (`01-PRD.md` … `07-RISKS-AND-OPEN-QUESTIONS.md`).
+
+---
+
 ## Customising the layout
 
 Open **GNOME Extensions → Tahoe Control Center → Preferences → Custom layout JSON**.
 
 Leave blank to use the default Tahoe layout.
 
-Provide a JSON object with a `blocks` array to override.  
+Provide a JSON object with a `blocks` array to override.
 Example (swap Dark Style / DND row order):
 
 ```json
@@ -162,7 +222,13 @@ Example (swap Dark Style / DND row order):
 
 ## Recovery
 
-The extension wraps `enable()` in a try/catch.  
+The extension wraps `enable()` in a try/catch.
 On any fatal error it calls `disable()` immediately, restoring stock Quick Settings.
 
 Logs: `journalctl -f /usr/bin/gnome-shell | grep TahoeCC`
+
+---
+
+## License
+
+Not specified yet.
