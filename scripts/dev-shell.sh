@@ -22,13 +22,15 @@ fi
 # ── Create isolated dconf profile in ~/.cache/tahoe-cc-dev/ ────────────────
 mkdir -p "$DEV_CACHE"
 
+# Note: dconf user-db names become D-Bus writer object paths (/ca/desrt/dconf/Writer/<name>),
+# which only allow [A-Za-z0-9_] — hyphens like tahoe-cc-dev cause dconf to abort.
 cat > "$DCONF_PROFILE_FILE" <<'EOF'
-user-db:tahoe-cc-dev
+user-db:tahoe_cc_dev
 EOF
 
 # ── Seed dev db from live settings (theme, wallpaper, etc.) ───────────────
 echo "Seeding dev dconf db from live session settings..."
-env -u DCONF_PROFILE dconf dump / | DCONF_PROFILE="$DCONF_PROFILE_FILE" dconf load / 2>/dev/null || true
+env -u DCONF_PROFILE dconf dump / | DCONF_PROFILE="$DCONF_PROFILE_FILE" dconf load /
 
 export DCONF_PROFILE="$DCONF_PROFILE_FILE"
 
@@ -39,8 +41,8 @@ if [[ -z "${DCONF_PROFILE:-}" ]] || [[ "$DCONF_PROFILE" != "$DCONF_PROFILE_FILE"
 fi
 
 # ── Set extension state in dev db only ────────────────────────────────────
-echo "Enabling extension '$UUID' in dev dconf db only..."
-dconf write /org/gnome/shell/enabled-extensions "['$UUID']"
+echo "Enabling extension '$UUID' and user-theme in dev dconf db only..."
+dconf write /org/gnome/shell/enabled-extensions "['user-theme@gnome-shell-extensions.gcampax.github.com', '$UUID']"
 dconf write /org/gnome/shell/disable-user-extensions "false"
 
 echo ""

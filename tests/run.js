@@ -4,6 +4,9 @@
 //
 // Uses a minimal assert harness — no external deps.
 
+import GLib from 'gi://GLib';
+import Gio from 'gi://Gio';
+
 import {Disposables} from '../src/lib/disposables.js';
 import {validateLayout, DEFAULT_LAYOUT} from '../src/lib/layoutConfig.js';
 import {planLayout} from '../src/lib/layoutPlan.js';
@@ -110,6 +113,57 @@ suite('Disposables', () => {
         let threw = false;
         try { d.dispose(); } catch (e) { threw = true; }
         assert(!threw, 'bad disconnect swallowed');
+    }
+
+    // cancellable(): returns Gio.Cancellable and cancels on dispose
+    {
+        const d = new Disposables();
+        const c = d.cancellable();
+        assert(c instanceof Gio.Cancellable, 'cancellable() returns Gio.Cancellable');
+        assert(!c.is_cancelled(), 'cancellable not cancelled initially');
+        assert(d.size === 1, 'size is 1 after cancellable()');
+        d.dispose();
+        assert(c.is_cancelled(), 'cancellable cancelled on dispose()');
+        assert(d.size === 0, 'size is 0 after dispose()');
+    }
+
+    // timeout() / idle() cancelled on dispose before firing
+    {
+        const d = new Disposables();
+        let timeoutCalled = false;
+        let idleCalled = false;
+        const tid = d.timeout(10, () => { timeoutCalled = true; return GLib.SOURCE_REMOVE; });
+        const iid = d.idle(() => { idleCalled = true; return GLib.SOURCE_REMOVE; });
+        assert(tid > 0 && iid > 0, 'timeout() and idle() return valid GLib source IDs');
+        assert(d.size === 2, 'size is 2 after timeout + idle');
+        d.dispose();
+
+        const loop = GLib.MainLoop.new(null, false);
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 25, () => { loop.quit(); return GLib.SOURCE_REMOVE; });
+        loop.run();
+
+        assert(!timeoutCalled, 'disposed timeout never fires');
+        assert(!idleCalled, 'disposed idle never fires');
+    }
+
+    // timeout() / idle() fired with SOURCE_REMOVE: dispose() does not remove already-removed source
+    {
+        const d = new Disposables();
+        let idleFired = false;
+        let timeoutFired = false;
+        d.idle(() => { idleFired = true; return GLib.SOURCE_REMOVE; });
+        d.timeout(1, () => { timeoutFired = true; return GLib.SOURCE_REMOVE; });
+
+        const loop = GLib.MainLoop.new(null, false);
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 20, () => { loop.quit(); return GLib.SOURCE_REMOVE; });
+        loop.run();
+
+        assert(idleFired, 'idle fired when not disposed');
+        assert(timeoutFired, 'timeout fired when not disposed');
+        let threw = false;
+        try { d.dispose(); } catch (e) { threw = true; }
+        assert(!threw, 'dispose() after SOURCE_REMOVE does not throw');
+        assert(d.size === 0, 'size is 0 after dispose()');
     }
 });
 

@@ -7,7 +7,7 @@ INSTALL_DIR := $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
 ## Install: symlink src/ into the extension install dir (NOT enabled in live session)
 install:
 	mkdir -p "$(HOME)/.local/share/gnome-shell/extensions"
-	ln -sf "$(WORKSPACE)/src" "$(INSTALL_DIR)"
+	ln -sfn "$(WORKSPACE)/src" "$(INSTALL_DIR)"
 	@echo "Symlink created: $(INSTALL_DIR) → $(WORKSPACE)/src"
 	@echo "NOTE: Extension is NOT enabled. Use 'make nested' to test in a safe nested shell."
 
