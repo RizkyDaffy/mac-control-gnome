@@ -17,10 +17,15 @@ export class MusicCard {
         this._destroyed = false;
 
         this.actor = new St.BoxLayout({
-            vertical: false,
+            orientation: Clutter.Orientation.HORIZONTAL,
             style_class: 'mac-cc-music-card mac-cc-split-right',
             x_expand: true,
             y_expand: true,
+        });
+        this.actor.connect('destroy', () => {
+            this._destroyed = true;
+            this._cancelArt();
+            this.actor = null;
         });
 
         this._art = new St.Widget({
@@ -30,7 +35,7 @@ export class MusicCard {
         this.actor.add_child(this._art);
 
         const infoBox = new St.BoxLayout({
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             style_class: 'mac-cc-music-info',
             x_expand: true,
             y_align: Clutter.ActorAlign.CENTER,
@@ -55,7 +60,7 @@ export class MusicCard {
         infoBox.add_child(this._artistLabel);
 
         const controls = new St.BoxLayout({
-            vertical: false,
+            orientation: Clutter.Orientation.HORIZONTAL,
             style_class: 'mac-cc-music-controls',
         });
         infoBox.add_child(controls);

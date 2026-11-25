@@ -1,3 +1,4 @@
+import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import St from 'gi://St';
 import {DEFAULT_LAYOUT, validateLayout} from './layoutConfig.js';
@@ -15,6 +16,9 @@ export class ControlCenter {
         this._mediaOpts = mediaOpts;
 
         this._root = null;
+        this._rootDestroyId = 0;
+        this._gridDestroyId = 0;
+        this._gridDestroyed = false;
         this._submenuHost = null;
         this._musicCard = null;
         this._lastMusicState = null;
@@ -66,15 +70,25 @@ export class ControlCenter {
         this._enabled = true;
 
         const {rowSpacing} = this._readGridSpacing();
+        this._gridDestroyed = false;
         this._root = new St.BoxLayout({
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             style_class: 'mac-cc mac-cc-root',
             x_expand: true,
         });
         this._root.layout_manager.spacing = rowSpacing;
+        this._rootDestroyId = this._root.connect('destroy', () => {
+            this._rootDestroyId = 0;
+            this._root = null;
+        });
 
         const box = this._qs.menu.box;
         const grid = this._qs.menu._grid;
+        this._gridDestroyId = grid.connect('destroy', () => {
+            this._gridDestroyId = 0;
+            this._gridDestroyed = true;
+            this._enabled = false;
+        });
         const gridIdx = box.get_children().indexOf(grid);
         if (gridIdx >= 0)
             box.insert_child_at_index(this._root, gridIdx + 1);
@@ -121,7 +135,7 @@ export class ControlCenter {
 
             const isFullWidth = entries.some(e => e.kind === 'slider' || (e.colSpan ?? 1) === 2);
             const rowBox = new St.BoxLayout({
-                vertical: false,
+                orientation: Clutter.Orientation.HORIZONTAL,
                 x_expand: true,
                 style_class: 'mac-cc-tile-row',
             });
@@ -139,7 +153,7 @@ export class ControlCenter {
             const menuEntries = entries.filter(e => e.menu?.actor);
             if (menuEntries.length > 0) {
                 slotActor = new St.BoxLayout({
-                    vertical: true,
+                    orientation: Clutter.Orientation.VERTICAL,
                     x_expand: true,
                     visible: false,
                     style_class: 'mac-cc-submenu-slot',
@@ -185,7 +199,7 @@ export class ControlCenter {
         for (const block of plan) {
             if (block.type === 'split') {
                 const splitBox = new St.BoxLayout({
-                    vertical: false,
+                    orientation: Clutter.Orientation.HORIZONTAL,
                     x_expand: true,
                     style_class: 'mac-cc-split',
                 });
@@ -194,7 +208,7 @@ export class ControlCenter {
                 const stackEntries = (block.stack ?? []).map(id => itemsMap.get(id)).filter(Boolean);
                 if (stackEntries.length > 0) {
                     const leftCol = new St.BoxLayout({
-                        vertical: true,
+                        orientation: Clutter.Orientation.VERTICAL,
                         x_expand: false,
                         style_class: 'mac-cc-split-left',
                     });
@@ -214,7 +228,7 @@ export class ControlCenter {
                 const menuEntries = stackEntries.filter(e => e.menu?.actor);
                 if (menuEntries.length > 0) {
                     slotActor = new St.BoxLayout({
-                        vertical: true,
+                        orientation: Clutter.Orientation.VERTICAL,
                         x_expand: true,
                         visible: false,
                         style_class: 'mac-cc-submenu-slot',
@@ -231,7 +245,7 @@ export class ControlCenter {
                     const entry = itemsMap.get(id);
                     if (!entry) continue;
                     const rowBox = new St.BoxLayout({
-                        vertical: false,
+                        orientation: Clutter.Orientation.HORIZONTAL,
                         x_expand: true,
                         style_class: 'mac-cc-slider-row',
                     });
@@ -240,7 +254,7 @@ export class ControlCenter {
                     let slotActor = null;
                     if (entry.menu?.actor) {
                         slotActor = new St.BoxLayout({
-                            vertical: true,
+                            orientation: Clutter.Orientation.VERTICAL,
                             x_expand: true,
                             visible: false,
                             style_class: 'mac-cc-submenu-slot',
@@ -253,7 +267,7 @@ export class ControlCenter {
                 const entries = (block.items ?? []).map(id => itemsMap.get(id)).filter(Boolean);
                 if (entries.length === 0) continue;
                 const rowBox = new St.BoxLayout({
-                    vertical: false,
+                    orientation: Clutter.Orientation.HORIZONTAL,
                     x_expand: true,
                     style_class: 'mac-cc-circles',
                 });
@@ -265,7 +279,7 @@ export class ControlCenter {
                 const menuEntries = entries.filter(e => e.menu?.actor);
                 if (menuEntries.length > 0) {
                     slotActor = new St.BoxLayout({
-                        vertical: true,
+                        orientation: Clutter.Orientation.VERTICAL,
                         x_expand: true,
                         visible: false,
                         style_class: 'mac-cc-submenu-slot',
@@ -283,7 +297,7 @@ export class ControlCenter {
     }
 
     _relayout() {
-        if (!this._root) return;
+        if (!this._root || !this._enabled || this._gridDestroyed) return;
 
         // 1. Detach hosted submenus before tearing down containers
         this._submenuHost?.detachAll();
@@ -369,10 +383,20 @@ export class ControlCenter {
         }
 
         try {
-            this._qs.menu._grid?.show();
+            if (!this._gridDestroyed)
+                this._qs.menu._grid?.show();
         } catch (e) {}
 
+        if (this._gridDestroyId && !this._gridDestroyed) {
+            try { this._qs.menu._grid?.disconnect(this._gridDestroyId); } catch (e) {}
+            this._gridDestroyId = 0;
+        }
+
         if (this._root) {
+            if (this._rootDestroyId) {
+                try { this._root.disconnect(this._rootDestroyId); } catch (e) {}
+                this._rootDestroyId = 0;
+            }
             try {
                 this._root.get_parent()?.remove_child(this._root);
                 this._root.destroy();

@@ -41,17 +41,22 @@ export class Registry {
         this._listeners = new Set();
         this._unclaimedSeq = 0;
         this._moving = false;
+        this._destroyed = false;
         this._itemConns = new Map();   // actor -> [signalId, ...]
 
+        this._disposables.connect(this._grid, 'destroy', () => {
+            this._destroyed = true;
+        });
+
         this._disposables.connect(this._grid, 'child-added', (_container, child) => {
-            if (this._moving || this._snapshots.has(child) || this._isPlaceholder(child))
+            if (this._destroyed || this._moving || this._snapshots.has(child) || this._isPlaceholder(child))
                 return;
             this.refresh();
             this._emitChanged();
         });
 
         this._disposables.connect(this._grid, 'child-removed', (_container, child) => {
-            if (this._moving || this._isPlaceholder(child))
+            if (this._destroyed || this._moving || this._isPlaceholder(child))
                 return;
             // If removed by Shell while not being moved by us, drop tracking
             if (this._actorToId.has(child)) {
