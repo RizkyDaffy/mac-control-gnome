@@ -31,11 +31,12 @@ export class ControlCenter {
         let rowSpacing = 12;
         let colSpacing = 12;
         try {
+            const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor || 1;
             const node = this._qs.menu._grid.get_theme_node();
             const [fRow, rLen] = node.lookup_length('spacing-rows', false);
             const [fCol, cLen] = node.lookup_length('spacing-columns', false);
-            if (fRow && rLen > 0) rowSpacing = rLen;
-            if (fCol && cLen > 0) colSpacing = cLen;
+            if (fRow && rLen > 0) rowSpacing = Math.round(rLen / scale);
+            if (fCol && cLen > 0) colSpacing = Math.round(cLen / scale);
         } catch (e) { /* use default 12 */ }
         return {rowSpacing, colSpacing};
     }
@@ -76,7 +77,7 @@ export class ControlCenter {
             style_class: 'mac-cc mac-cc-root',
             x_expand: true,
         });
-        this._root.layout_manager.spacing = rowSpacing;
+        this._root.set_style(`spacing: ${rowSpacing}px;`);
         this._rootDestroyId = this._root.connect('destroy', () => {
             this._rootDestroyId = 0;
             this._root = null;
@@ -139,7 +140,7 @@ export class ControlCenter {
                 x_expand: true,
                 style_class: 'mac-cc-tile-row',
             });
-            rowBox.layout_manager.spacing = colSpacing;
+            rowBox.set_style(`spacing: ${colSpacing}px;`);
             if (!isFullWidth)
                 rowBox.layout_manager.homogeneous = true;
 
@@ -203,23 +204,29 @@ export class ControlCenter {
                     x_expand: true,
                     style_class: 'mac-cc-split',
                 });
-                splitBox.layout_manager.spacing = colSpacing;
+                splitBox.set_style(`spacing: ${colSpacing}px;`);
 
                 const stackEntries = (block.stack ?? []).map(id => itemsMap.get(id)).filter(Boolean);
+                if (stackEntries.length > 0 && block.card)
+                    splitBox.layout_manager.homogeneous = true;
+
                 if (stackEntries.length > 0) {
                     const leftCol = new St.BoxLayout({
                         orientation: Clutter.Orientation.VERTICAL,
-                        x_expand: false,
+                        x_expand: true,
                         style_class: 'mac-cc-split-left',
                     });
-                    leftCol.layout_manager.spacing = rowSpacing;
+                    leftCol.set_style(`spacing: ${rowSpacing}px;`);
                     for (const entry of stackEntries)
                         move(entry.actor, leftCol, {xExpand: true});
                     splitBox.add_child(leftCol);
                 }
 
                 if (block.card) {
-                    this._musicCard = new MusicCard(this._mediaOpts);
+                    this._musicCard = new MusicCard({
+                        ...this._mediaOpts,
+                        halfWidth: stackEntries.length > 0,
+                    });
                     this._musicCard.update(this._lastMusicState);
                     splitBox.add_child(this._musicCard.actor);
                 }
@@ -271,7 +278,7 @@ export class ControlCenter {
                     x_expand: true,
                     style_class: 'mac-cc-circles',
                 });
-                rowBox.layout_manager.spacing = colSpacing;
+                rowBox.set_style(`spacing: ${colSpacing}px;`);
                 for (const entry of entries)
                     move(entry.actor, rowBox, {xExpand: true});
 
@@ -327,7 +334,7 @@ export class ControlCenter {
             child.destroy();
 
         const spacing = this._readGridSpacing();
-        this._root.layout_manager.spacing = spacing.rowSpacing;
+        this._root.set_style(`spacing: ${spacing.rowSpacing}px;`);
 
         // 4. Plan + build Tahoe layout
         const itemsMap = this._registry.getItems();

@@ -7,6 +7,7 @@
 /* ── Root container ─────────────────────────────────────────── */
 .mac-cc-root {
     padding: 0px;
+    spacing: 12px;
 }
 
 .mac-cc-submenu-slot {
@@ -24,21 +25,28 @@
 }
 
 /* ── Music / Now Playing card ───────────────────────────────── */
+/* Inherits glass surface, inset highlight, border-radius, and foreground color
+ * from the active shell theme's .quick-slider class. */
 .mac-cc-music-card {
     padding: 12px;
-    border-radius: 18px;
-    spacing: 10px;
-    background-color: rgba(127, 127, 127, 0.15);
+    border-radius: 24px;
+    spacing: 8px;
+}
+
+.mac-cc-music-card-half {
+    min-width: 80px;
+    max-width: 148px;
 }
 
 .mac-cc-music-art {
-    border-radius: 10px;
-    min-width: 48px;
-    min-height: 48px;
-    max-width: 72px;
-    max-height: 72px;
+    border-radius: 12px;
+    min-width: 46px;
+    min-height: 46px;
+    max-width: 56px;
+    max-height: 56px;
     background-size: cover;
-    background-color: rgba(127, 127, 127, 0.25);
+    background-color: rgba(255, 255, 255, 0.15);
+    box-shadow: inset 0 0 3px rgba(255, 255, 255, 0.25);
 }
 
 .mac-cc-music-info {
@@ -46,13 +54,13 @@
 }
 
 .mac-cc-music-title {
-    font-size: 0.85em;
+    font-size: 0.9em;
     font-weight: bold;
 }
 
 .mac-cc-music-artist {
-    font-size: 0.78em;
-    opacity: 160;
+    font-size: 0.8em;
+    opacity: 175;
 }
 
 .mac-cc-music-controls {
@@ -61,10 +69,19 @@
 }
 
 .mac-cc-music-btn {
-    padding: 4px;
+    padding: 6px;
+    margin: 0px;
     border-radius: 9999px;
-    min-width: 24px;
+    min-width: 20px;
     min-height: 24px;
+}
+
+.mac-cc-music-btn-play StIcon {
+    icon-size: 20px;
+}
+
+.mac-cc-music-btn-disabled {
+    opacity: 165;
 }
 
 /* ── Tile rows ──────────────────────────────────────────────── */

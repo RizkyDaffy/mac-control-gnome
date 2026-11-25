@@ -5,23 +5,32 @@ import St from 'gi://St';
 import {setArtOnWidget} from './artCache.js';
 
 export class MusicCard {
-    constructor({onPrev, onPlayPause, onNext, artCache} = {}) {
+    constructor({onPrev, onPlayPause, onNext, artCache, halfWidth = false} = {}) {
         this._onPrev = onPrev;
         this._onPlayPause = onPlayPause;
         this._onNext = onNext;
         this._artCache = artCache;
+        this._halfWidth = halfWidth;
 
         this._busName = null;
         this._lastArtUrl = null;
         this._artCancellable = null;
         this._destroyed = false;
 
+        this._fallbackStyle = null;
+        this._hasBgFallback = false;
+
+        const cardClasses = halfWidth
+            ? 'quick-slider mac-cc-music-card mac-cc-music-card-half mac-cc-split-right'
+            : 'quick-slider mac-cc-music-card mac-cc-split-right';
+
         this.actor = new St.BoxLayout({
-            orientation: Clutter.Orientation.HORIZONTAL,
-            style_class: 'mac-cc-music-card mac-cc-split-right',
+            orientation: Clutter.Orientation.VERTICAL,
+            style_class: cardClasses,
             x_expand: true,
             y_expand: true,
         });
+        this.actor.connect('style-changed', () => this._syncThemeFallback());
         this.actor.connect('destroy', () => {
             this._destroyed = true;
             this._cancelArt();
@@ -30,7 +39,8 @@ export class MusicCard {
 
         this._art = new St.Widget({
             style_class: 'mac-cc-music-art',
-            y_align: Clutter.ActorAlign.CENTER,
+            x_align: Clutter.ActorAlign.START,
+            y_align: Clutter.ActorAlign.START,
         });
         this.actor.add_child(this._art);
 
@@ -38,7 +48,7 @@ export class MusicCard {
             orientation: Clutter.Orientation.VERTICAL,
             style_class: 'mac-cc-music-info',
             x_expand: true,
-            y_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.START,
         });
         this.actor.add_child(infoBox);
 
@@ -48,6 +58,7 @@ export class MusicCard {
             x_expand: true,
         });
         this._titleLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        this._titleLabel.clutter_text.single_line_mode = true;
         infoBox.add_child(this._titleLabel);
 
         this._artistLabel = new St.Label({
@@ -57,20 +68,25 @@ export class MusicCard {
             visible: false,
         });
         this._artistLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        this._artistLabel.clutter_text.single_line_mode = true;
         infoBox.add_child(this._artistLabel);
 
         const controls = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
             style_class: 'mac-cc-music-controls',
+            x_expand: true,
+            y_expand: true,
+            y_align: Clutter.ActorAlign.END,
         });
-        infoBox.add_child(controls);
+        controls.layout_manager.homogeneous = true;
+        this.actor.add_child(controls);
 
         this._prevBtn = this._makeButton('media-skip-backward-symbolic', 'Previous', () => {
             this._onPrev?.(this._busName);
         });
         this._playPauseBtn = this._makeButton('media-playback-start-symbolic', 'Play/Pause', () => {
             this._onPlayPause?.(this._busName);
-        });
+        }, 'mac-cc-music-btn-play');
         this._nextBtn = this._makeButton('media-skip-forward-symbolic', 'Next', () => {
             this._onNext?.(this._busName);
         });
@@ -82,13 +98,89 @@ export class MusicCard {
         this.update(null);
     }
 
-    _makeButton(iconName, accessibleName, onClick) {
+    _syncThemeFallback() {
+        if (this._destroyed || !this.actor) return;
+        try {
+            const searchRoot = this.actor.get_parent()?.get_parent() ?? this.actor.get_parent();
+            const sliderSibling = this._findSiblingByClass(searchRoot, ['quick-slider']);
+            const themeBgAlpha = sliderSibling
+                ? sliderSibling.get_theme_node().get_background_color().alpha
+                : (this._hasBgFallback ? 0 : this.actor.get_theme_node().get_background_color().alpha);
+
+            const tileSibling = this._findSiblingByClass(searchRoot, ['quick-toggle', 'quick-toggle-has-menu']);
+            const parts = [];
+            let hasBgFallback = false;
+
+            // On themes where .quick-slider is transparent (e.g. stock Yaru/Adwaita),
+            // copy background and text color from a sibling .quick-toggle tile.
+            if (themeBgAlpha === 0) {
+                hasBgFallback = true;
+                if (tileSibling) {
+                    const sNode = tileSibling.get_theme_node();
+                    const sBg = sNode.get_background_color();
+                    const sFg = sNode.get_foreground_color();
+                    if (sBg.alpha > 0) {
+                        parts.push(
+                            `background-color: rgba(${sBg.red}, ${sBg.green}, ${sBg.blue}, ${(sBg.alpha / 255).toFixed(3)})`,
+                            `color: rgba(${sFg.red}, ${sFg.green}, ${sFg.blue}, ${(sFg.alpha / 255).toFixed(3)})`
+                        );
+                    } else {
+                        parts.push('background-color: rgba(127, 127, 127, 0.18)');
+                    }
+                } else {
+                    parts.push('background-color: rgba(127, 127, 127, 0.18)');
+                }
+            }
+
+            if (this._halfWidth && tileSibling) {
+                const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor || 1;
+                const sNode = tileSibling.get_theme_node();
+                const [foundMax, maxW] = sNode.lookup_length('max-width', false);
+                if (foundMax && maxW > 0) {
+                    const sPad = sNode.get_padding(St.Side.LEFT) + sNode.get_padding(St.Side.RIGHT) +
+                        sNode.get_border_width(St.Side.LEFT) + sNode.get_border_width(St.Side.RIGHT);
+                    const cNode = this.actor.get_theme_node();
+                    const cPad = cNode.get_padding(St.Side.LEFT) + cNode.get_padding(St.Side.RIGHT) +
+                        cNode.get_border_width(St.Side.LEFT) + cNode.get_border_width(St.Side.RIGHT);
+                    const logicalMax = Math.max(80, Math.round((maxW + sPad - cPad) / scale));
+                    if (logicalMax !== 148)
+                        parts.push(`max-width: ${logicalMax}px`);
+                }
+            }
+
+            this._hasBgFallback = hasBgFallback;
+            const style = parts.length > 0 ? `${parts.join('; ')};` : null;
+            if (this._fallbackStyle !== style) {
+                this._fallbackStyle = style;
+                this.actor.set_style(style);
+            }
+        } catch (e) { /* actor unmapped or mid-destroy */ }
+    }
+
+    _findSiblingByClass(parent, classNames) {
+        if (!parent) return null;
+        for (const child of parent.get_children()) {
+            if (child === this.actor) continue;
+            const tokens = child.style_class?.split(/\s+/) ?? [];
+            if (classNames.some(c => tokens.includes(c)))
+                return child;
+            if (child.get_children) {
+                const nested = this._findSiblingByClass(child, classNames);
+                if (nested) return nested;
+            }
+        }
+        return null;
+    }
+
+    _makeButton(iconName, accessibleName, onClick, extraClass = '') {
         const icon = new St.Icon({icon_name: iconName});
         const btn = new St.Button({
-            style_class: 'icon-button mac-cc-music-btn',
+            style_class: extraClass ? `icon-button mac-cc-music-btn ${extraClass}` : 'icon-button mac-cc-music-btn',
             child: icon,
             accessible_name: accessibleName,
             can_focus: true,
+            x_expand: true,
+            x_align: Clutter.ActorAlign.CENTER,
         });
         btn.connect('clicked', onClick);
         return btn;
@@ -98,9 +190,9 @@ export class MusicCard {
         btn.reactive = enabled;
         btn.can_focus = enabled;
         if (enabled)
-            btn.remove_style_pseudo_class('insensitive');
+            btn.remove_style_class_name('mac-cc-music-btn-disabled');
         else
-            btn.add_style_pseudo_class('insensitive');
+            btn.add_style_class_name('mac-cc-music-btn-disabled');
     }
 
     update(state) {
