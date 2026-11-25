@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.tahoe-control-center"
+          path="/org/gnome/shell/extensions/tahoe-control-center/">
+
+    <key name="music-card-enabled" type="b">
+      <default>true</default>
+      <summary>Show Now Playing card</summary>
+      <description>Show the macOS Tahoe-style Now Playing card in Quick Settings.</description>
+    </key>
+
+    <key name="show-battery-pill" type="b">
+      <default>false</default>
+      <summary>Show battery percentage pill</summary>
+      <description>Show the stock battery percentage pill (P2 feature).</description>
+    </key>
+
+    <key name="fetch-remote-art" type="b">
+      <default>true</default>
+      <summary>Allow remote album art fetch</summary>
+      <description>Allow fetching album art over HTTPS for the Now Playing card.</description>
+    </key>
+
+    <key name="layout-json" type="s">
+      <default>''</default>
+      <summary>Custom layout JSON</summary>
+      <description>Empty string uses the default layout. Provide a JSON object with a "blocks" array to override. Invalid JSON falls back to the default with a warning logged.</description>
+    </key>
+
+    <key name="debug" type="b">
+      <default>false</default>
+      <summary>Debug mode</summary>
+      <description>Enable verbose logging and actor tree dump on enable(). Never enable in production.</description>
+    </key>
+
+  </schema>
+</schemalist>

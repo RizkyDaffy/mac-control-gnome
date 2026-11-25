@@ -1,0 +1,68 @@
+/* Tahoe Control Center — structural skeleton stylesheet.
+ * All classes prefixed mac-cc- to avoid collisions with stock shell classes.
+ * No hardcoded colors — use theme variables or inherit from the shell theme.
+ * No web CSS properties — St supports a limited subset of CSS.
+ */
+
+/* ── Root container ─────────────────────────────────────────── */
+.mac-cc-root {
+    /* vertical stack; replaces the stock grid */
+}
+
+/* ── Split block (connectivity left + music card right) ─────── */
+.mac-cc-split {
+}
+
+.mac-cc-split-left {
+}
+
+.mac-cc-split-right {
+}
+
+/* ── Music / Now Playing card ───────────────────────────────── */
+.mac-cc-music-card {
+}
+
+.mac-cc-music-art {
+}
+
+.mac-cc-music-info {
+}
+
+.mac-cc-music-title {
+}
+
+.mac-cc-music-artist {
+}
+
+.mac-cc-music-controls {
+}
+
+.mac-cc-music-btn {
+}
+
+/* ── Tile rows ──────────────────────────────────────────────── */
+.mac-cc-tile-row {
+}
+
+.mac-cc-tile {
+}
+
+.mac-cc-tile-lone {
+    /* single tile in a row occupies left half */
+}
+
+/* ── Slider rows ────────────────────────────────────────────── */
+.mac-cc-slider-row {
+}
+
+/* ── Circle button row ──────────────────────────────────────── */
+.mac-cc-circles {
+}
+
+.mac-cc-circle-btn {
+}
+
+/* ── Overflow block ─────────────────────────────────────────── */
+.mac-cc-overflow {
+}

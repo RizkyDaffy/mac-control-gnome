@@ -1,0 +1,5 @@
+dist/
+src/schemas/gschemas.compiled
+*.zip
+node_modules/
+*.swp

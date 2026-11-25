@@ -1,0 +1,9 @@
+{
+  "uuid": "tahoe-control-center@local",
+  "name": "Tahoe Control Center",
+  "description": "macOS Tahoe-style layout for Quick Settings with a Now Playing card.",
+  "shell-version": ["51"],
+  "settings-schema": "org.gnome.shell.extensions.tahoe-control-center",
+  "url": "",
+  "version": 1
+}

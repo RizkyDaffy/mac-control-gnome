@@ -1,0 +1,10 @@
+{
+  "busName": "org.mpris.MediaPlayer2.spotify",
+  "status": "Playing",
+  "lastActive": 1000,
+  "title": "Blinding Lights",
+  "xesam:title": "Blinding Lights",
+  "xesam:artist": ["The Weeknd"],
+  "xesam:album": "After Hours",
+  "mpris:artUrl": "https://i.scdn.co/image/ab67616d0000b273abc123"
+}

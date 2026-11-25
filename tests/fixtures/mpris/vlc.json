@@ -1,0 +1,10 @@
+{
+  "busName": "org.mpris.MediaPlayer2.vlc",
+  "status": "Paused",
+  "lastActive": 500,
+  "title": "Big Buck Bunny",
+  "xesam:title": "Big Buck Bunny",
+  "xesam:artist": ["Blender Foundation"],
+  "xesam:album": "",
+  "mpris:artUrl": "file:///home/user/.cache/vlc/art.jpg"
+}

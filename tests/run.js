@@ -1,0 +1,493 @@
+#!/usr/bin/env gjs
+// GJS ES module test runner for pure logic modules.
+// Run: gjs -m tests/run.js
+//
+// Uses a minimal assert harness — no external deps.
+
+import {Disposables} from '../src/lib/disposables.js';
+import {validateLayout, DEFAULT_LAYOUT} from '../src/lib/layoutConfig.js';
+import {planLayout} from '../src/lib/layoutPlan.js';
+import {normalizeMetadata} from '../src/lib/mprisMetadata.js';
+import {pickActivePlayer} from '../src/lib/playerSelection.js';
+
+// ── Harness ──────────────────────────────────────────────────────────────────
+
+let passed = 0;
+let failed = 0;
+
+function assert(cond, label) {
+    if (cond) {
+        console.log(`  ✓ ${label}`);
+        passed++;
+    } else {
+        console.error(`  ✗ FAIL: ${label}`);
+        failed++;
+    }
+}
+
+function assertEq(a, b, label) {
+    const ok = JSON.stringify(a) === JSON.stringify(b);
+    if (ok) {
+        console.log(`  ✓ ${label}`);
+        passed++;
+    } else {
+        console.error(`  ✗ FAIL: ${label}`);
+        console.error(`      got:      ${JSON.stringify(a)}`);
+        console.error(`      expected: ${JSON.stringify(b)}`);
+        failed++;
+    }
+}
+
+function suite(name, fn) {
+    console.log(`\n── ${name} ──`);
+    fn();
+}
+
+// ── Fake GLib/Gio for Disposables timeout/idle/cancellable ───────────────────
+// (Those methods are NOT tested here; we only test connect/add/dispose.)
+
+// ── Tests: Disposables ───────────────────────────────────────────────────────
+
+suite('Disposables', () => {
+    // connect/disconnect
+    {
+        let disconnected = false;
+        const fakeObj = {
+            connect(_sig, _cb) { return 42; },
+            disconnect(id) { if (id === 42) disconnected = true; },
+        };
+        const d = new Disposables();
+        d.connect(fakeObj, 'notify', () => {});
+        assert(d.size === 1, 'size is 1 after connect');
+        d.dispose();
+        assert(disconnected, 'disconnect called on dispose');
+        assert(d.size === 0, 'size is 0 after dispose');
+    }
+
+    // add + dispose order (LIFO)
+    {
+        const order = [];
+        const d = new Disposables();
+        d.add(() => order.push(1));
+        d.add(() => order.push(2));
+        d.add(() => order.push(3));
+        d.dispose();
+        assertEq(order, [3, 2, 1], 'dispose runs in LIFO order');
+    }
+
+    // dispose is idempotent (calling twice must not throw)
+    {
+        const d = new Disposables();
+        d.add(() => {});
+        d.dispose();
+        let threw = false;
+        try { d.dispose(); } catch (e) { threw = true; }
+        assert(!threw, 'second dispose does not throw');
+        assert(d.size === 0, 'size 0 after double dispose');
+    }
+
+    // error in one item does not stop others
+    {
+        const order = [];
+        const d = new Disposables();
+        d.add(() => order.push('a'));
+        d.add(() => { throw new Error('boom'); });
+        d.add(() => order.push('b'));
+        let threw = false;
+        try { d.dispose(); } catch (e) { threw = true; }
+        assert(!threw, 'dispose does not propagate item error');
+        assert(order.includes('a') && order.includes('b'), 'both non-throwing items ran');
+    }
+
+    // connect: bad disconnect is swallowed
+    {
+        const fakeObj = {
+            connect() { return 99; },
+            disconnect() { throw new Error('already gone'); },
+        };
+        const d = new Disposables();
+        d.connect(fakeObj, 'test', () => {});
+        let threw = false;
+        try { d.dispose(); } catch (e) { threw = true; }
+        assert(!threw, 'bad disconnect swallowed');
+    }
+});
+
+// ── Tests: layoutConfig ──────────────────────────────────────────────────────
+
+suite('layoutConfig — validateLayout', () => {
+    // empty string → default
+    {
+        const {layout, warnings} = validateLayout('');
+        assertEq(layout, DEFAULT_LAYOUT, 'empty string → default layout');
+        assert(warnings.length === 0, 'no warnings for empty string');
+    }
+
+    // null → default
+    {
+        const {layout, warnings} = validateLayout(null);
+        assertEq(layout, DEFAULT_LAYOUT, 'null → default layout');
+        assert(warnings.length === 0, 'no warnings for null');
+    }
+
+    // invalid JSON → default + warning
+    {
+        const {layout, warnings} = validateLayout('not json }{');
+        assertEq(layout, DEFAULT_LAYOUT, 'invalid JSON → default layout');
+        assert(warnings.length > 0, 'invalid JSON produces warning');
+        assert(warnings[0].startsWith('Invalid JSON'), 'warning mentions Invalid JSON');
+    }
+
+    // missing blocks → default + warning
+    {
+        const {layout, warnings} = validateLayout('{"version":1}');
+        assertEq(layout, DEFAULT_LAYOUT, 'missing blocks → default');
+        assert(warnings.some(w => w.includes('Missing blocks')), 'warning for missing blocks');
+    }
+
+    // valid custom layout
+    {
+        const custom = JSON.stringify({
+            version: 2,
+            blocks: [
+                {type: 'tiles', id: 'my-tiles', items: ['wifi']},
+                {type: 'overflow', id: 'overflow'},
+            ],
+        });
+        const {layout, warnings} = validateLayout(custom);
+        assert(layout.version === 2, 'custom version preserved');
+        assert(layout.blocks.length === 2, 'both blocks kept');
+        assert(warnings.length === 0, 'no warnings for valid layout');
+    }
+
+    // unknown block type → skipped + warning
+    {
+        const json = JSON.stringify({
+            version: 1,
+            blocks: [
+                {type: 'unknown-type', id: 'x'},
+                {type: 'tiles', id: 'good', items: []},
+            ],
+        });
+        const {layout, warnings} = validateLayout(json);
+        assert(layout.blocks.length === 1, 'unknown block type filtered out');
+        assert(warnings.some(w => w.includes('Unknown block type')), 'warning for unknown type');
+    }
+
+    // block missing id → skipped + warning
+    {
+        const json = JSON.stringify({
+            version: 1,
+            blocks: [
+                {type: 'tiles', items: []},  // no id
+                {type: 'sliders', id: 'ok', items: []},
+            ],
+        });
+        const {layout, warnings} = validateLayout(json);
+        assert(layout.blocks.length === 1, 'block without id filtered out');
+        assert(warnings.some(w => w.includes('missing id')), 'warning for missing id');
+    }
+});
+
+// ── Tests: layoutPlan ────────────────────────────────────────────────────────
+
+suite('layoutPlan — planLayout', () => {
+    function makeItems(entries) {
+        const m = new Map();
+        for (const e of entries) m.set(e.id, e);
+        return m;
+    }
+
+    // tiles: two visible → one row of 2
+    {
+        const config = {blocks: [{type: 'tiles', id: 'row', items: ['a', 'b']}]};
+        const items = makeItems([
+            {id: 'a', visible: true},
+            {id: 'b', visible: true},
+        ]);
+        const plan = planLayout(config, items);
+        assert(plan.length === 1, 'one block plan');
+        assertEq(plan[0].rows, [['a', 'b']], 'two items → one row');
+    }
+
+    // tiles: three visible → row of 2, row of 1
+    {
+        const config = {blocks: [{type: 'tiles', id: 'row', items: ['a', 'b', 'c']}]};
+        const items = makeItems([
+            {id: 'a', visible: true},
+            {id: 'b', visible: true},
+            {id: 'c', visible: true},
+        ]);
+        const plan = planLayout(config, items);
+        assertEq(plan[0].rows, [['a', 'b'], ['c']], 'three items → rows [2,1]');
+    }
+
+    // invisible item not placed
+    {
+        const config = {blocks: [{type: 'tiles', id: 'row', items: ['a', 'b']}]};
+        const items = makeItems([
+            {id: 'a', visible: true},
+            {id: 'b', visible: false},
+        ]);
+        const plan = planLayout(config, items);
+        assertEq(plan[0].rows, [['a']], 'invisible item excluded');
+    }
+
+    // empty block → not in plan
+    {
+        const config = {blocks: [{type: 'tiles', id: 'empty', items: ['x']}]};
+        const items = makeItems([{id: 'x', visible: false}]);
+        const plan = planLayout(config, items);
+        assert(plan.length === 0, 'all-invisible block omitted');
+    }
+
+    // duplicate item claimed only once
+    {
+        const config = {blocks: [
+            {type: 'tiles', id: 'first', items: ['a']},
+            {type: 'tiles', id: 'second', items: ['a', 'b']},
+        ]};
+        const items = makeItems([
+            {id: 'a', visible: true},
+            {id: 'b', visible: true},
+        ]);
+        const plan = planLayout(config, items);
+        assert(plan.length === 2, 'both blocks in plan');
+        assertEq(plan[0].rows, [['a']], 'first block gets a');
+        assertEq(plan[1].rows, [['b']], 'second block: a already claimed, only b');
+    }
+
+    // overflow: unclaimed items collected
+    {
+        const config = {blocks: [
+            {type: 'tiles', id: 't', items: ['a']},
+            {type: 'overflow', id: 'overflow'},
+        ]};
+        const items = makeItems([
+            {id: 'a', visible: true},
+            {id: 'b', visible: true},
+        ]);
+        const plan = planLayout(config, items);
+        const overflow = plan.find(p => p.type === 'overflow');
+        assert(!!overflow, 'overflow block present');
+        assert(overflow.items.includes('b'), 'unclaimed item b in overflow');
+        assert(!overflow.items.includes('a'), 'claimed item a not in overflow');
+    }
+
+    // sliders: one per row
+    {
+        const config = {blocks: [{type: 'sliders', id: 's', items: ['vol', 'bright']}]};
+        const items = makeItems([
+            {id: 'vol', visible: true},
+            {id: 'bright', visible: true},
+        ]);
+        const plan = planLayout(config, items);
+        assertEq(plan[0].rows, [['vol'], ['bright']], 'sliders: one per row');
+    }
+
+    // circles
+    {
+        const config = {blocks: [{type: 'circles', id: 'c', items: ['screenshot', 'lock']}]};
+        const items = makeItems([
+            {id: 'screenshot', visible: true},
+            {id: 'lock', visible: true},
+        ]);
+        const plan = planLayout(config, items);
+        assertEq(plan[0].items, ['screenshot', 'lock'], 'circles: single row');
+    }
+
+    // split: stack + card flag
+    {
+        const config = {blocks: [{type: 'split', id: 'conn', stack: ['wifi', 'bt'], card: 'music'}]};
+        const items = makeItems([
+            {id: 'wifi', visible: true},
+            {id: 'bt', visible: true},
+        ]);
+        const plan = planLayout(config, items);
+        assert(plan[0].type === 'split', 'split block type');
+        assertEq(plan[0].stack, ['wifi', 'bt'], 'stack items');
+        assert(plan[0].card === true, 'card flag true for music');
+    }
+});
+
+// ── Tests: mprisMetadata ─────────────────────────────────────────────────────
+
+suite('mprisMetadata — normalizeMetadata', () => {
+    // null/undefined → empty
+    {
+        const m = normalizeMetadata(null);
+        assertEq(m, {title: '', artist: '', album: '', artUrl: null}, 'null → empty');
+    }
+    {
+        const m = normalizeMetadata(undefined);
+        assertEq(m, {title: '', artist: '', album: '', artUrl: null}, 'undefined → empty');
+    }
+    {
+        const m = normalizeMetadata('string');
+        assertEq(m, {title: '', artist: '', album: '', artUrl: null}, 'non-object → empty');
+    }
+
+    // normal Spotify-like metadata
+    {
+        const raw = {
+            'xesam:title': '  Blinding Lights  ',
+            'xesam:artist': ['The Weeknd'],
+            'xesam:album': 'After Hours',
+            'mpris:artUrl': 'https://i.scdn.co/image/abc123',
+        };
+        const m = normalizeMetadata(raw);
+        assert(m.title === 'Blinding Lights', 'title trimmed');
+        assert(m.artist === 'The Weeknd', 'artist from array');
+        assert(m.album === 'After Hours', 'album present');
+        assert(m.artUrl === 'https://i.scdn.co/image/abc123', 'https art URL kept');
+    }
+
+    // multiple artists joined
+    {
+        const raw = {'xesam:artist': ['Artist A', 'Artist B'], 'xesam:title': 'Song'};
+        const m = normalizeMetadata(raw);
+        assert(m.artist === 'Artist A, Artist B', 'multiple artists joined');
+    }
+
+    // artist as plain string
+    {
+        const raw = {'xesam:artist': 'Solo Artist', 'xesam:title': 'Track'};
+        const m = normalizeMetadata(raw);
+        assert(m.artist === 'Solo Artist', 'string artist kept');
+    }
+
+    // file: protocol art URL allowed
+    {
+        const raw = {'mpris:artUrl': 'file:///home/user/.cache/art.png'};
+        const m = normalizeMetadata(raw);
+        assert(m.artUrl === 'file:///home/user/.cache/art.png', 'file: art URL allowed');
+    }
+
+    // ftp: protocol rejected
+    {
+        const raw = {'mpris:artUrl': 'ftp://example.com/art.png'};
+        const m = normalizeMetadata(raw);
+        assert(m.artUrl === null, 'ftp: art URL rejected');
+    }
+
+    // malformed URL rejected
+    {
+        const raw = {'mpris:artUrl': 'not a url !!!'};
+        const m = normalizeMetadata(raw);
+        assert(m.artUrl === null, 'malformed URL → null');
+    }
+
+    // title truncated to 300 chars
+    {
+        const raw = {'xesam:title': 'x'.repeat(500)};
+        const m = normalizeMetadata(raw);
+        assert(m.title.length === 300, 'title truncated to 300');
+    }
+
+    // missing fields → empty strings
+    {
+        const m = normalizeMetadata({});
+        assertEq(m, {title: '', artist: '', album: '', artUrl: null}, 'empty object → all empty');
+    }
+});
+
+// ── Tests: playerSelection ───────────────────────────────────────────────────
+
+suite('playerSelection — pickActivePlayer', () => {
+    function mp(busName, status, lastActive, title = 'Song') {
+        return {busName, status, lastActive, title};
+    }
+
+    // no players → null
+    {
+        const r = pickActivePlayer(new Map(), null);
+        assert(r === null, 'no players → null');
+    }
+
+    // single playing player
+    {
+        const players = new Map([['org.mpris.MediaPlayer2.spotify', mp('org.mpris.MediaPlayer2.spotify', 'Playing', 100)]]);
+        const r = pickActivePlayer(players, null);
+        assert(r === 'org.mpris.MediaPlayer2.spotify', 'single playing → that player');
+    }
+
+    // playerctld filtered out
+    {
+        const players = new Map([
+            ['org.mpris.MediaPlayer2.playerctld', mp('org.mpris.MediaPlayer2.playerctld', 'Playing', 200)],
+            ['org.mpris.MediaPlayer2.vlc', mp('org.mpris.MediaPlayer2.vlc', 'Paused', 50)],
+        ]);
+        const r = pickActivePlayer(players, null);
+        assert(r === 'org.mpris.MediaPlayer2.vlc', 'playerctld filtered out');
+    }
+
+    // prefer Playing over Paused
+    {
+        const players = new Map([
+            ['org.mpris.MediaPlayer2.rhythmbox', mp('org.mpris.MediaPlayer2.rhythmbox', 'Paused', 200)],
+            ['org.mpris.MediaPlayer2.spotify', mp('org.mpris.MediaPlayer2.spotify', 'Playing', 100)],
+        ]);
+        const r = pickActivePlayer(players, null);
+        assert(r === 'org.mpris.MediaPlayer2.spotify', 'Playing beats Paused');
+    }
+
+    // stickiness: keep prev if still Playing and no newer player
+    {
+        const players = new Map([
+            ['org.mpris.MediaPlayer2.a', mp('org.mpris.MediaPlayer2.a', 'Playing', 100)],
+            ['org.mpris.MediaPlayer2.b', mp('org.mpris.MediaPlayer2.b', 'Playing', 50)],
+        ]);
+        const r = pickActivePlayer(players, 'org.mpris.MediaPlayer2.a');
+        assert(r === 'org.mpris.MediaPlayer2.a', 'sticky: keep prev Playing when no newer');
+    }
+
+    // newer player beats sticky prev
+    {
+        const players = new Map([
+            ['org.mpris.MediaPlayer2.a', mp('org.mpris.MediaPlayer2.a', 'Playing', 100)],
+            ['org.mpris.MediaPlayer2.b', mp('org.mpris.MediaPlayer2.b', 'Playing', 200)],
+        ]);
+        const r = pickActivePlayer(players, 'org.mpris.MediaPlayer2.a');
+        assert(r === 'org.mpris.MediaPlayer2.b', 'newer player overrides sticky prev');
+    }
+
+    // Stopped + no title → filtered (dead)
+    {
+        const players = new Map([
+            ['org.mpris.MediaPlayer2.dead', {busName: 'org.mpris.MediaPlayer2.dead', status: 'Stopped', lastActive: 999, title: ''}],
+        ]);
+        const r = pickActivePlayer(players, null);
+        assert(r === null, 'Stopped empty title → dead → null');
+    }
+
+    // Stopped + title → treated as paused, returned
+    {
+        const players = new Map([
+            ['org.mpris.MediaPlayer2.vlc', mp('org.mpris.MediaPlayer2.vlc', 'Stopped', 10, 'Some Track')],
+        ]);
+        const r = pickActivePlayer(players, null);
+        assert(r === 'org.mpris.MediaPlayer2.vlc', 'Stopped with title → paused bucket → returned');
+    }
+
+    // most recently active paused wins
+    {
+        const players = new Map([
+            ['org.mpris.MediaPlayer2.a', mp('org.mpris.MediaPlayer2.a', 'Paused', 50)],
+            ['org.mpris.MediaPlayer2.b', mp('org.mpris.MediaPlayer2.b', 'Paused', 200)],
+        ]);
+        const r = pickActivePlayer(players, null);
+        assert(r === 'org.mpris.MediaPlayer2.b', 'most recently active paused wins');
+    }
+});
+
+// ── Summary ──────────────────────────────────────────────────────────────────
+
+console.log(`\n${'─'.repeat(50)}`);
+console.log(`Results: ${passed} passed, ${failed} failed`);
+if (failed > 0) {
+    console.error('TESTS FAILED');
+    // Exit with non-zero code
+    imports.system.exit(1);
+} else {
+    console.log('ALL TESTS PASSED');
+}

@@ -1,0 +1,10 @@
+{
+  "busName": "org.mpris.MediaPlayer2.firefox",
+  "status": "Playing",
+  "lastActive": 800,
+  "title": "Never Gonna Give You Up",
+  "xesam:title": "Never Gonna Give You Up",
+  "xesam:artist": ["Rick Astley"],
+  "xesam:album": "Whenever You Need Somebody",
+  "mpris:artUrl": "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg"
+}
