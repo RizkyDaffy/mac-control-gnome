@@ -1,75 +1,88 @@
-/* Tahoe Control Center — structural skeleton stylesheet.
+/* Tahoe Control Center — structural stylesheet.
  * All classes prefixed mac-cc- to avoid collisions with stock shell classes.
- * No hardcoded colors — use theme variables or inherit from the shell theme.
- * No web CSS properties — St supports a limited subset of CSS.
+ * No hardcoded colors — inherits from the active shell theme (MacTahoe or stock).
+ * St CSS subset only: no var(), calc(), flex, grid, or gap.
  */
 
 /* ── Root container ─────────────────────────────────────────── */
-.mac-cc,
 .mac-cc-root {
-    /* vertical stack; replaces the stock grid */
-}
-
-.mac-cc-row {
+    padding: 0px;
 }
 
 .mac-cc-submenu-slot {
+    padding-top: 6px;
+    padding-bottom: 6px;
 }
 
-/* ── Split block (connectivity left + music card right) ─────── */
+/* ── Split block ────────────────────────────────────────────── */
 .mac-cc-split {
+    spacing: 12px;
 }
 
 .mac-cc-split-left {
-}
-
-.mac-cc-split-right {
+    spacing: 12px;
 }
 
 /* ── Music / Now Playing card ───────────────────────────────── */
 .mac-cc-music-card {
+    padding: 12px;
+    border-radius: 18px;
+    spacing: 10px;
+    background-color: rgba(127, 127, 127, 0.15);
 }
 
 .mac-cc-music-art {
+    border-radius: 10px;
+    min-width: 48px;
+    min-height: 48px;
+    max-width: 72px;
+    max-height: 72px;
+    background-size: cover;
+    background-color: rgba(127, 127, 127, 0.25);
 }
 
 .mac-cc-music-info {
+    spacing: 2px;
 }
 
 .mac-cc-music-title {
+    font-size: 0.85em;
+    font-weight: bold;
 }
 
 .mac-cc-music-artist {
+    font-size: 0.78em;
+    opacity: 160;
 }
 
 .mac-cc-music-controls {
+    spacing: 4px;
+    padding-top: 4px;
 }
 
 .mac-cc-music-btn {
+    padding: 4px;
+    border-radius: 9999px;
+    min-width: 24px;
+    min-height: 24px;
 }
 
 /* ── Tile rows ──────────────────────────────────────────────── */
 .mac-cc-tile-row {
-}
-
-.mac-cc-tile {
-}
-
-.mac-cc-tile-lone {
-    /* single tile in a row occupies left half */
+    spacing: 12px;
 }
 
 /* ── Slider rows ────────────────────────────────────────────── */
 .mac-cc-slider-row {
+    spacing: 0px;
 }
 
 /* ── Circle button row ──────────────────────────────────────── */
 .mac-cc-circles {
-}
-
-.mac-cc-circle-btn {
+    spacing: 12px;
 }
 
 /* ── Overflow block ─────────────────────────────────────────── */
 .mac-cc-overflow {
+    spacing: 12px;
 }

@@ -28,10 +28,21 @@ logs:
 test:
 	gjs -m tests/run.js
 
-## Pack extension zip for distribution (requires gnome-extensions CLI)
-pack:
+## Pack extension zip for distribution
+## gnome-extensions pack flattens subdirs, so we build the zip manually.
+pack: schemas
 	mkdir -p dist
-	gnome-extensions pack src/ --out-dir dist/ --force
+	rm -f dist/$(UUID).shell-extension.zip
+	cd src && zip -r ../dist/$(UUID).shell-extension.zip \
+		metadata.json \
+		extension.js \
+		prefs.js \
+		stylesheet.css \
+		lib/ \
+		schemas/org.gnome.shell.extensions.tahoe-control-center.gschema.xml \
+		schemas/gschemas.compiled
+	@echo "Built: dist/$(UUID).shell-extension.zip"
+	@unzip -l dist/$(UUID).shell-extension.zip
 
 ## Remove symlink
 uninstall:
