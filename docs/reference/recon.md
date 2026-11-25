@@ -159,7 +159,7 @@ item.menu.connect('open-state-changed', (m, isOpen) => {
 Actual single-open enforcement: `PopupMenu.PopupMenuManager` manages `this._menuManager` on `QuickSettingsItem` (`quickSettings.js:35`). `PopupMenuManager` closes the previous open menu when a new one opens.
 
 ### What happens if toggle removed from grid
-`menu.actor` stays in `_overlay` (it was added there separately). The overlay does not auto-remove it. The layout manager no longer sees the tile in `_getRows()`, so it won't reserve space for the sub-menu. **The actor becomes orphaned/invisible but not destroyed** — the extension must manually `_overlay.remove_child(item.menu.actor)` when removing an item. This is a known extension pitfall.
+`menu.actor` stays in `_overlay` (it was added there separately). The overlay does not auto-remove it. The layout manager no longer sees the tile in `_getRows()`, so it won't reserve space for the sub-menu. **The actor becomes orphaned/invisible** (and `QuickToggleMenu`'s `BindConstraint` still points at the tile) — if an extension removes or reparents a tile out of `_grid`, it must explicitly manage `item.menu.actor` (either reparenting it into a `SubmenuSlot` and removing/restoring its Y `BindConstraint`, or re-targeting the constraint + adding a height-bound spacer). Also note `_dimEffect` (`quickSettings.js:756-759`, `860-875`) is attached to `this._boxPointer`, so anything inside `menu.box` (which is inside `_boxPointer`) gets dimmed when `this._setDimmed(true)` runs on `open-state-changed` unless handled or moved/adjusted.
 
 ---
 
@@ -199,6 +199,17 @@ Actual single-open enforcement: `PopupMenu.PopupMenuManager` manages `this._menu
 | `PowerToggle` extra | adds `power-item` | `system.js:38` |
 | Panel indicator box | `panel-status-indicators-box` | `quickSettings.js:882`, `panel.js:307` |
 | Panel status icon | `system-status-icon` | `quickSettings.js:895` |
+
+### MacTahoe theme CSS findings (`/home/daproot/.themes/MacTahoe-Dark-blue/gnome-shell/gnome-shell.css:4110-4450`)
+
+- **Popup & grid (`4110-4136`):**
+  - `.quick-settings` sets `padding: 20px !important; padding-top: 8px !important; border-radius: 33px !important; margin-top: 8px !important; margin-bottom: 28px !important; margin-left: 28px !important;`.
+  - `.quick-settings-grid` sets `spacing-rows: 12px; spacing-columns: 12px;`.
+- **Toggles (`4138-4200`):**
+  - `.quick-toggle, .quick-toggle-has-menu` sets `min-width: 100px; max-width: 172px; min-height: 40px; border: none; box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.35) !important; color: white;`.
+  - `.quick-toggle` sets `background-color: rgba(255, 255, 255, 0.15) !important; border-radius: 9999px; padding: 12px !important;` (pill shape — so the music card must **NOT** blindly reuse `.quick-toggle` without overriding `border-radius`, `max-width`, and hover/active/checked states).
+- **Selector scoping:** Tile selectors (`.quick-toggle`, `.quick-toggle-has-menu`, `.quick-slider`, `.quick-toggle-menu`) are top-level or descend from `.quick-settings` (e.g., `.quick-settings .button`), **NOT** `.quick-settings-grid > .quick-toggle`, so reparented tiles inside `menu.box` keep all MacTahoe styling.
+- **System buttons exception (`4416-4450`):** `.quick-settings-system-item .icon-button` gives the 4 round buttons their circular MacTahoe look (`border-radius: 9999px; min-height: 28px !important; min-width: 28px !important; padding: 12px;`). When reparenting those buttons out of `SystemItem` into our `circles` row, that row must carry `quick-settings-system-item` (or equivalent styling) to keep their circle look.
 
 ---
 
@@ -272,14 +283,13 @@ Based on source analysis + enabled extensions + hardware detection:
 
 ## Sub-menu strategy recommendation
 
-**Recommend strategy S-B: overlay-reparent.**
+**Recommend strategy S-A: Submenu host** (because keeping items in `_grid` cannot produce the Tahoe split layout).
+
+Two implementation variants fit S-A and will both be verified in Phase 2 nested shell:
+1. **Direct slot reparenting:** Move `item.menu.actor` out of `menu._overlay` into a `SubmenuSlot` placed directly after the owning block inside `_root`, removing its `Clutter.BindConstraint` on Y (`quickSettings.js:367-373`) and restoring both parent (`_overlay`) and constraint on `disable()`. Note: `_dimEffect` on `_boxPointer` (`quickSettings.js:756-759`, `860-875`) dims all `_boxPointer` children (including `_root` and any `SubmenuSlot` inside `menu.box`) when `_setDimmed(true)` fires on `open-state-changed` — verify/suppress dimming on the open slot or `_boxPointer` if needed.
+2. **Overlay + re-targeted constraint + spacer:** Keep `item.menu.actor` inside `menu._overlay` (which sits outside `_boxPointer` as a sibling on `menu.actor`, `quickSettings.js:821`, avoiding `_dimEffect`), re-target its Y `BindConstraint` source to the owning block, and place a height-bound `SubmenuSlot` spacer in `_root` after the owning block.
 
 Rationale from source:
-1. `item.menu.actor` is **already in `_overlay`**, not `_grid` — the shell's own design separates tile from menu actor.
-2. `QuickSettingsLayout` explicitly tracks `overlayHeight` per row (`quickSettings.js:701`) and inserts it when `row.some(c => c.menu?.actor.visible)` — the layout is designed around this overlay model.
-3. The overlay is positioned via `BindConstraint` to `_grid` and `_boxPointer`, so sub-menu position tracks the grid automatically.
-4. Opening/closing is fully animated; we can call `item.menu.open()` / `item.menu.close()` directly.
-
-For Tahoe's custom panel layout: add items via `menu.addItem(item, colSpan)` which calls `_completeAddItem` and correctly parents `item.menu.actor` to `_overlay`. Do NOT manually re-parent tiles or menus — the layout manager's row-height accounting (`overlayHeight`) depends on them staying in their respective parents.
-
-**Gotcha:** Removing an item from the grid does NOT auto-remove `item.menu.actor` from `_overlay`. Always call `menu._overlay.remove_child(item.menu.actor)` when removing a tile.
+- Stock `QuickSettingsLayout` cannot express the `split` block (left toggle stack + right music card), so tiles must move out of `_grid` into `_root` inside `menu.box`.
+- `QuickToggleMenu` already animates `this.actor.height` and `this.box.opacity` in `open()`/`close()` (`quickSettings.js:463-525`) and enforces single-open via `PopupMenuManager` (`quickSettings.js:35-36`).
+- On `disable()`, any moved `menu.actor` and modified `Clutter.BindConstraint` must be restored cleanly to `menu._overlay` and the original `sourceActor` constraint.

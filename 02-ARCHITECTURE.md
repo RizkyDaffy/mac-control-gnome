@@ -55,43 +55,62 @@ Rules that matter here: no work in the constructor, all setup in `enable()`, all
 screen, which is fine, but then `disable()` runs on every lock, so it must be fast and
 `enable()` must rebuild cleanly on unlock).
 
-## 2. How the stock Quick Settings is built (VERIFY all)
+## 2. How the stock Quick Settings is built (`[VERIFIED GS 51]`)
 
-Files in the Shell's gresource: `js/ui/quickSettings.js`, `js/ui/panel.js`,
-`js/ui/status/*.js` (network, bluetooth, system, volume, brightness, nightLight, darkMode,
-powerProfiles, rfkill, ...).
+Files in the Shell's gresource (`/usr/lib/gnome-shell/libshell-51.so`): `ui/quickSettings.js`,
+`ui/panel.js`, `ui/status/*.js` (network, bluetooth, system, volume, brightness, nightLight,
+darkMode, doNotDisturb, powerProfiles, rfkill, ...).
 
-Recalled structure:
+Verified structure in GNOME Shell 51.0:
 
-- `Main.panel.statusArea.quickSettings` is the panel button. Its `menu` is a
-  `QuickSettingsMenu` (a `PopupMenu`). `menu.box` is the vertical container shown in the
-  popup. Inside is `menu._grid` (an `St.Widget` with a `QuickSettingsLayout` layout manager)
-  holding the items in 2 columns. (VERIFY exact property names `_grid`, `box`.)
-- Items are added through `menu.addItem(item, colSpan = 1)` which does `_grid.add_child(item)`
-  and sets a `column-span` child property on the layout manager. (VERIFY)
-- The panel's `QuickSettings` class creates `SystemIndicator`s, recalled as members:
-  `_system`, `_volumeOutput`, `_volumeInput`, `_brightness`, `_remoteAccess`, `_location`,
-  `_thunderbolt`, `_nightLight`, `_network`, `_bluetooth`, `_powerProfiles`, `_rfkill`,
-  `_autoRotate`, `_unsafeMode`, `_backgroundApps` (newer), `_darkMode`. Each has
-  `quickSettingsItems` (array of items it contributes). (VERIFY names and presence per version.)
-- Item classes exported from `quickSettings.js`: `QuickToggle`, `QuickMenuToggle` (toggle with
-  an arrow and a sub-menu at `item.menu`), `QuickSlider`, `QuickSettingsItem`,
-  `SystemIndicator`. Tile visuals use style class `quick-toggle` (and `quick-slider`,
-  `icon-button`, ...). (VERIFY)
-- **Sub-menu mechanics:** `QuickMenuToggle.menu` is a `QuickToggleMenu` (popup-menu-base style
-  object with `.actor`). In the stock panel the grid's layout manager reserves an "overlay"
-  row under the toggle's row when the menu is open and positions `menu.actor` there.
-  Only one menu is open at a time. (VERIFY: where `menu.actor` is parented, who positions it,
-  how open/close animates, what closes other menus.) **This is the highest-risk part.**
-- **System item** (`_system._systemItem` or similar, from `status/system.js`): one grid item
-  containing the battery label and the 4 round buttons (screenshot, settings, lock, power).
-  The power button opens a power menu. (VERIFY child names and how the power menu is anchored.)
+- `Main.panel.statusArea.quickSettings` (`panel.js:302`, `436`) is the panel button. Its `menu`
+  is a `QuickSettingsMenu` (`quickSettings.js:739`, extends `PopupMenu.PopupMenu`). `menu.box`
+  (class `quick-settings`) is the vertical container inside `menu._boxPointer`. Inside
+  `menu.box` is `menu._grid` (`quickSettings.js:775`, `St.Widget` with style class
+  `quick-settings-grid` and `QuickSettingsLayout` with `N_QUICK_SETTINGS_COLUMNS = 2` from
+  `panel.js:42`). `[VERIFIED GS 51]`
+- Items are added through `menu.addItem(item, colSpan = 1)` (`quickSettings.js:824`) or
+  `menu.insertItemBefore(item, sibling, colSpan = 1)` (`quickSettings.js:829`), which call
+  `_completeAddItem()` (`quickSettings.js:834`): adds `item` to `menu._grid`, sets
+  `column-span` via `menu._grid.layout_manager.child_set_property(menu._grid, item, 'column-span', colSpan)`,
+  and adds `item.menu.actor` (if present) to `menu._overlay`. `[VERIFIED GS 51]`
+- The panel's `QuickSettings` class (`panel.js:336-352`) creates `SystemIndicator`s:
+  `_system`, `_camera`, `_volumeOutput`, `_volumeInput`, `_brightness`, `_remoteAccess`,
+  `_location`, `_thunderbolt`, `_nightLight`, `_darkMode`, `_doNotDisturb`, `_backlight`,
+  `_powerProfiles`, `_rfkill`, `_autoRotate`, `_unsafeMode`, `_backgroundApps`, plus optional
+  `_network` (`Config.HAVE_NETWORKMANAGER`) and `_bluetooth` (`Config.HAVE_BLUETOOTH`). Each
+  exposes `quickSettingsItems`. `[VERIFIED GS 51]`
+- Item classes exported from `quickSettings.js`: `QuickSettingsItem`, `QuickToggle`
+  (`quick-toggle button`), `QuickMenuToggle` (`quick-toggle-has-menu`), `QuickSlider`
+  (`quick-slider`), `SystemIndicator`. System buttons use `icon-button`. `[VERIFIED GS 51]`
+- **Sub-menu mechanics:** `QuickMenuToggle.menu` is a `QuickToggleMenu` (`quickSettings.js:363`)
+  whose `.actor` (`quick-toggle-menu-container`) is parented to `menu._overlay` (`Clutter.Actor`
+  sibling of `_boxPointer` on `menu.actor`, `quickSettings.js:821`, `839`), NOT to `menu._grid`.
+  A `Clutter.BindConstraint` binds `menu.actor`'s Y to `sourceActor` with `offset = sourceActor.height`
+  (`quickSettings.js:367-373`). `QuickSettingsLayout.vfunc_allocate` checks
+  `row.some(c => c.menu?.actor.visible)` (`quickSettings.js:733`) and adds `overlayHeight`
+  below that row. Each `QuickSettingsItem` with `hasMenu: true` creates a
+  `PopupMenu.PopupMenuManager` (`quickSettings.js:35-36`) enforcing one open sub-menu at a time,
+  and `QuickSettingsMenu` applies `_dimEffect` (`Clutter.BrightnessContrastEffect`) to
+  `_boxPointer` on `open-state-changed` (`quickSettings.js:841-845`, `860-875`). `[VERIFIED GS 51]`
+- **System item** (`SystemItem` at `status/system.js:262`, owned by `_system._systemItem` at
+  `system.js:327`): one `QuickSettingsItem` (`quick-settings-system-item`, `colSpan = 2`) whose
+  `child` is a plain `St.BoxLayout` containing `this._powerToggle` (`PowerToggle`, `power-item`,
+  hidden when no battery), `_laptopSpacer`, `ScreenshotItem`, `SettingsItem`, `_desktopSpacer`,
+  `LockItem`, and `ShutdownItem` (`system.js:270-299`). The battery percentage label
+  (`_percentageLabel`) lives on `system.Indicator` in the top bar (`system.js:320`), **not**
+  inside `SystemItem` (inside `SystemItem`, battery % is `PowerToggle.title`). `ShutdownItem` has
+  `hasMenu: true`, and `SystemItem` aliases `this.menu = shutdownItem.menu` (`system.js:300`).
+  `ShutdownItem.menu` is anchored to `ShutdownItem` via `QuickToggleMenu`'s Y `BindConstraint`
+  and added to `menu._overlay` via `SystemItem.menu`. `[VERIFIED GS 51]`
 - **Third-party extensions** add tiles via
-  `Main.panel.statusArea.quickSettings.addExternalIndicator(indicator)` which ends in
-  `menu.addItem(...)`. Therefore a `child-added` handler on the grid sees them.
-- **Do Not Disturb:** in stock GNOME, DND has historically lived in the calendar/notification
-  popup, not the Quick Settings grid. The user's screenshot shows a DND tile in Quick Settings,
-  so it comes from either a newer GNOME or an extension. (VERIFY in Phase 0; decides FR-17.)
+  `Main.panel.statusArea.quickSettings.addExternalIndicator(indicator, colSpan)` (`panel.js:423`)
+  which calls `menu.insertItemBefore(...)` → `menu._grid.insert_child_below(...)`. Therefore
+  `child-added` on `menu._grid` sees them. `[VERIFIED GS 51]`
+- **Do Not Disturb:** Stock GNOME Shell 51 tile (`DoNotDisturbToggle` in
+  `ui/status/doNotDisturb.js`, indicator `_doNotDisturb` at `panel.js:346`, `401`). Backed by
+  `org.gnome.desktop.notifications` `show-banners` (inverted). No enabled extension provides DND;
+  `dndFallback.js` is only needed if missing on another system. `[VERIFIED GS 51]`
 
 ## 3. Core design principles
 
@@ -131,20 +150,20 @@ src/lib/
 
 ### 4.1 Logical item ids (registry output)
 
-| id | Kind | Expected source (VERIFY) | Default block |
+| id | Kind | Source (`[VERIFIED GS 51]`) | Default block |
 |---|---|---|---|
-| `wifi` | menu-toggle | `_network` indicator; wireless toggle (class name probably contains "Wireless") | split.stack |
-| `bluetooth` | menu-toggle | `_bluetooth` indicator | split.stack |
-| `dark-style` | toggle | `_darkMode` | tiles-1 |
-| `dnd` | toggle | extension-provided, GNOME-provided, or fallback tile | tiles-1 |
-| `volume-output` | slider | `_volumeOutput` | sliders |
-| `volume-input` | slider | `_volumeInput` (only visible when a mic is in use) | sliders |
-| `brightness` | slider | `_brightness` | sliders |
-| `system-battery` | label | `_system` item child (percentage label) | (hidden by default) |
-| `screenshot`, `settings`, `lock`, `power` | button | `_system` item children | circles |
-| `power-mode` | menu-toggle | `_powerProfiles` | tiles-2 |
-| `night-light` | toggle | `_nightLight` | tiles-2 |
-| `airplane-mode` | toggle | `_rfkill` | tiles-2 |
+| `wifi` | menu-toggle | `_network` indicator; wireless toggle (`NMWirelessSection` in `status/network.js`) | split.stack |
+| `bluetooth` | menu-toggle | `_bluetooth` indicator (`BluetoothToggle`, `status/bluetooth.js:272`) | split.stack |
+| `dark-style` | toggle | `_darkMode` (`DarkModeToggle`, `status/darkMode.js:9`) | tiles-1 |
+| `dnd` | toggle | `_doNotDisturb` (`DoNotDisturbToggle`, `status/doNotDisturb.js`) | tiles-1 |
+| `volume-output` | slider | `_volumeOutput` (`OutputStreamSlider`, `status/volume.js:293`) | sliders |
+| `volume-input` | slider | `_volumeInput` (`InputStreamSlider`, `status/volume.js:367`, visible only when recording) | sliders |
+| `brightness` | slider | `_brightness` (`BrightnessItem`, `status/brightness.js:37`) | sliders |
+| `system-battery` | toggle | `_system._systemItem._powerToggle` (`PowerToggle`, `status/system.js:26`, `power-item`; top-bar pill is `_system._percentageLabel`) | (hidden by default) |
+| `screenshot`, `settings`, `lock`, `power` | button | `_system._systemItem.child` children (`ScreenshotItem`, `SettingsItem`, `LockItem`, `ShutdownItem` in `status/system.js`) | circles |
+| `power-mode` | menu-toggle | `_powerProfiles` (`PowerProfilesToggle`, `status/powerProfiles.js:41`) | tiles-2 |
+| `night-light` | toggle | `_nightLight` (`NightLightToggle`, `status/nightLight.js:15`) | tiles-2 |
+| `airplane-mode` | toggle | `_rfkill` (`RfkillToggle`, `status/rfkill.js:93`) | tiles-2 |
 | anything else (VPN, remote access, location, auto-rotate, background apps, third-party) | any | any grid child not claimed | overflow |
 
 The registry exposes:
@@ -217,7 +236,10 @@ placed only the first time; invalid user JSON falls back to `DEFAULT_LAYOUT`.
   height/opacity instead or reparent it into an off-screen holder.)
 - For each plan block, create a block actor and add the item actors to it. Equal widths in a
   row: `x_expand: true` for children and `layout_manager.homogeneous = true` on the row
-  (VERIFY St.BoxLayout exposes the Clutter.BoxLayout `homogeneous` property in this version).
+  (`St.BoxLayout` uses `Clutter.BoxLayout` which supports `homogeneous`, though stock
+  `SystemItem` uses `x_expand: true` spacers instead `[VERIFIED GS 51]`). For the `circles`
+  block, carry style class `quick-settings-system-item` so MacTahoe's `.quick-settings-system-item .icon-button`
+  circle rules apply (`gnome-shell.css:4420`).
 - Relayout strategy: keep block actors if the block's *plan signature* is unchanged; only
   rebuild changed blocks. Simplest correct v1: on change, detach all item actors from our
   rows (without destroying), destroy our row actors, rebuild rows from the plan. It is OK
@@ -235,7 +257,7 @@ placed only the first time; invalid user JSON falls back to `DEFAULT_LAYOUT`.
 ```js
 snapshot(actor) → {
   actor, parent, index,                 // original parent and child index
-  colSpan,                              // from parent's layout manager if applicable (VERIFY API)
+  colSpan,                              // via layout_manager.child_get_property(grid, actor, 'column-span') [VERIFIED GS 51]
   visible, xExpand, yExpand, xAlign, yAlign,
   addedStyleClasses: [],                // classes WE add (so we can remove them)
 }
@@ -248,31 +270,35 @@ Edge cases to handle: item destroyed by its owner while in our container (listen
 restoring in reverse of moved order to preserve indices; restoring when another extension
 has since reordered the grid (best effort: append at original index clamped to child count).
 
-## 5. Sub-menus (highest-risk area; plan an experiment)
+## 5. Sub-menus (`[VERIFIED GS 51]`, Phase 2 experiment)
 
-Problem: the stock layout manager positions the open sub-menu relative to the *grid row* of
-the toggle. After reparenting toggles into our own containers that mechanism may no longer
-apply (VERIFY by reading `QuickSettingsLayout` and `QuickMenuToggle` source).
+Verified mechanics (`quickSettings.js:363-539`, `733-875`): `QuickMenuToggle.menu.actor`
+(`quick-toggle-menu-container`) lives in `menu._overlay`, positioned vertically below
+`sourceActor` via a `Clutter.BindConstraint` on Y (`offset = sourceActor.height`), while
+`QuickSettingsLayout.vfunc_allocate` inserts `overlayHeight` below the owning row. After
+reparenting toggles out of `_grid` into `_root`, `_grid`'s layout manager no longer spaces
+the open sub-menu.
 
-Candidate strategies, try in this order and record results in `recon.md`:
+Recommended strategy: **S-A (Submenu host)** — verify both variants in Phase 2 nested shell:
 
-- **S-A (preferred): Submenu host.** For every `QuickMenuToggle`, take `item.menu.actor`
-  (VERIFY it can be reparented), place it in a `SubmenuSlot` (`St.Bin`/`St.BoxLayout`,
-  initially hidden) inserted directly after the block that contains the toggle. Listen to
-  `menu` `open-state-changed`: show the slot, animate height 0 to natural (respect
-  `St.Settings.get().enable_animations`), and the reverse on close. Enforce one open at a
-  time by closing others before opening (`otherMenu.close(BoxPointer.PopupAnimation.NONE)`).
-  The arrow button's stock click handler should keep working untouched.
-- **S-B: Keep a native mini-grid for menu toggles.** Wrap menu-toggles in a private
-  `St.Widget` that uses a *clone of the stock layout manager* class (if it is exported and
-  reusable). Probably brittle across versions.
+- **S-A1 (Direct slot reparenting):** For every item with `.menu` (`QuickMenuToggle`,
+  `QuickSlider`, and `SystemItem`/`ShutdownItem`), move `item.menu.actor` out of `menu._overlay`
+  into a `SubmenuSlot` placed directly after the owning block in `_root` (removing its
+  `Clutter.BindConstraint` on Y and restoring both parent and constraint on `disable()`).
+  Note: `_dimEffect` on `_boxPointer` (`quickSettings.js:860-875`) dims `_boxPointer` children
+  when `open-state-changed` fires, so check dimming behavior in nested shell.
+- **S-A2 (Overlay + re-targeted constraint + spacer):** Keep `item.menu.actor` in `menu._overlay`
+  (outside `_boxPointer`, avoiding `_dimEffect`), re-target its Y `BindConstraint` source to
+  the owning block, and place a height-bound `SubmenuSlot` spacer in `_root` after that block.
 - **S-C (fallback, least desirable):** Open sub-menus as a separate popover/box anchored to
   the right of the panel. Document as degraded UX.
 
-Also verify: Escape closes the menu, panel close closes the menu, keyboard focus moves into
-the menu, the menu's items scroll if long (Wi-Fi network lists), and the popup does not
-exceed monitor height (the stock panel clamps height; ensure our root participates the same
-way, e.g. inside a `St.ScrollView` only if the stock one does).
+Also verified in source (`[VERIFIED GS 51]`): `QuickToggleMenu` already animates `actor.height`
+and `box.opacity` (`POPUP_ANIMATION_TIME = 400`, `quickSettings.js:463-525`); `PopupMenuManager`
+(`quickSettings.js:35-36`) enforces one open menu at a time; stock `QuickSettingsMenu` has
+**no** `St.ScrollView` or height clamping (`quickSettings.js:739-876`), so Tahoe must add its
+own `St.ScrollView` wrapper if content + open sub-menu exceeds monitor height. Verify Escape,
+panel close, keyboard focus, and long Wi-Fi list scrolling in nested shell.
 
 ## 6. Music card and MPRIS
 
