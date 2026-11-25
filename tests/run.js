@@ -451,6 +451,20 @@ suite('mprisMetadata — normalizeMetadata', () => {
         const m = normalizeMetadata({});
         assertEq(m, {title: '', artist: '', album: '', artUrl: null}, 'empty object → all empty');
     }
+
+    // edge cases: empty/space/javascript art URLs + mixed-type artist/album
+    {
+        assert(normalizeMetadata({'mpris:artUrl': 'https://'}).artUrl === null, 'https:// without host → null');
+        assert(normalizeMetadata({'mpris:artUrl': 'https://bad host/art.png'}).artUrl === null, 'URL with whitespace → null');
+        assert(normalizeMetadata({'mpris:artUrl': 'javascript:alert(1)'}).artUrl === null, 'javascript: URL → null');
+        const m = normalizeMetadata({
+            'xesam:artist': [null, '', 'Valid Artist', 123],
+            'xesam:album': 42,
+            'xesam:title': 999,
+        });
+        assert(m.artist === 'Valid Artist', 'mixed-type artist array filters non-strings');
+        assert(m.album === '' && m.title === '', 'non-string title/album → empty');
+    }
 });
 
 // ── Tests: playerSelection ───────────────────────────────────────────────────
